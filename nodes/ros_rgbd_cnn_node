@@ -53,7 +53,7 @@ class rgbd_msg(object):
         self._rgb = None;
         self._depth = None;
 
-class planeNetNode(object):
+class RGBD_CNN_Node(object):
     def __init__(self):
         self._cv_bridge = CvBridge()
 
@@ -74,30 +74,6 @@ class planeNetNode(object):
         self._msg_lock = threading.Lock()
 
         self._publish_rate = rospy.get_param('~publish_rate', 100)
-
-    def run(self):
-        self._result_pub = rospy.Publisher('~result', Result, queue_size=1)
-        self._segimg_pub = rospy.Publisher('segimg', Image, queue_size=1)
-        rgb_sub = message_filters.Subscriber('~rgb', Image, queue_size=1)
-        depth_sub = message_filters.Subscriber('~depth', Image, queue_size=1)
-        ts = message_filters.ApproximateTimeSynchronizer([rgb_sub, depth_sub], 10, 0.1, allow_headerless=True)
-        ts.registerCallback(self._sync_callback)
-
-        rate = rospy.Rate(self._publish_rate)
-        while not rospy.is_shutdown():
-            if self._msg_lock.acquire(False):
-                msg = self._last_msg
-                self._last_msg = None
-                self._msg_lock.release()
-            else:
-                rate.sleep()
-                continue
-
-            if msg is not None:
-                self._segment_image(msg)
-
-            rate.sleep()
-
 
     def _build_result_msg(self, msg, result):
         result_msg = Result()
@@ -132,6 +108,36 @@ class planeNetNode(object):
             self._last_msg._rgb = self._cv_bridge.imgmsg_to_cv2(ros_rgb_img, 'bgr8')  # 32FC1 for depth images, bgr8 for color images
             self._last_msg._depth = self._cv_bridge.imgmsg_to_cv2(ros_depth_img, '32FC1')  # 32FC1 for depth images, bgr8 for color images
             self._msg_lock.release()
+
+    def _segment_image(self, msg):
+        return
+
+class RedNet(RGBD_CNN_Node):
+    def __init__(self):
+        RGBD_CNN_Node.__init__(self)
+
+    def run(self):
+        self._result_pub = rospy.Publisher('~result', Result, queue_size=1)
+        self._segimg_pub = rospy.Publisher('segimg', Image, queue_size=1)
+        rgb_sub = message_filters.Subscriber('~rgb', Image, queue_size=1)
+        depth_sub = message_filters.Subscriber('~depth', Image, queue_size=1)
+        ts = message_filters.ApproximateTimeSynchronizer([rgb_sub, depth_sub], 10, 0.1, allow_headerless=True)
+        ts.registerCallback(self._sync_callback)
+
+        rate = rospy.Rate(self._publish_rate)
+        while not rospy.is_shutdown():
+            if self._msg_lock.acquire(False):
+                msg = self._last_msg
+                self._last_msg = None
+                self._msg_lock.release()
+            else:
+                rate.sleep()
+                continue
+
+            if msg is not None:
+                self._segment_image(msg)
+
+            rate.sleep()
 
     def _segment_image(self, msg):
         rgb_img = msg._rgb
@@ -173,15 +179,10 @@ class planeNetNode(object):
         result_msg = self._build_result_msg(msg, result)
         self._result_pub.publish(result_msg)
 
-#class RedNet(planeNetNode):
-#    def __init__(self):
-#        // invoke
-#    def segment_image(self, msg):
-
 def main():
     rospy.init_node('ros_rgbd_cnn_node')
 
-    node = planeNetNode()
+    node = RedNet()
     node.run()
 
 if __name__ == '__main__':
