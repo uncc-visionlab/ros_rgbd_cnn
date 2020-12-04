@@ -94,44 +94,7 @@ class planeNetNode(object):
                 continue
 
             if msg is not None:
-                rgb_img = msg._rgb
-                depth_img = msg._depth
-                depth_img = np.nan_to_num(depth_img)
-                #depth_img = depth_img*10000
-                #print("rgb_(min,max) 0: " + str(rgb_img[..., 0].min()) + "," + str(rgb_img[..., 0].max()))
-                #print("rgb_(min,max) 1: " + str(rgb_img[..., 1].min()) + "," + str(rgb_img[..., 1].max()))
-                #print("rgb_(min,max) 2: " + str(rgb_img[..., 2].min()) + "," + str(rgb_img[..., 2].max()))
-                #print("depth_(min,max): " + str(depth_img[...].min()) + "," + str(depth_img[...].max()))
-                # Run detection
-                # Bi-linear
-                image = skimage.transform.resize(rgb_img, (480, 640), order=1,
-                                         mode='reflect', preserve_range=True)
-                depth = skimage.transform.resize(depth_img, (480, 640), order=0,
-                                     mode='reflect', preserve_range=True)
-                image = image / 255
-                image = torch.from_numpy(image).float()
-                depth = torch.from_numpy(depth).float()
-                image = image.permute(2, 0, 1)
-                depth = torch.unsqueeze(depth, 0)
-
-                image = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                     std=[0.229, 0.224, 0.225])(image)
-                depth = torchvision.transforms.Normalize(mean=[19050],
-                                                     std=[9650])(depth)
-
-                image = image.to(device).unsqueeze_(0)
-                depth = depth.to(device).unsqueeze_(0)
-                #print("running inference")
-                result = self._model(image, depth)
-
-                color_label = utils.color_label(torch.max(result, 1)[1] + 1)[0]
-                img = color_label.cpu().numpy().transpose((1, 2, 0))
-                img = img.astype(np.uint8)
-                img_msg = self._cv_bridge.cv2_to_imgmsg(img, 'bgr8')
-                self._segimg_pub.publish(img_msg)
-
-                result_msg = self._build_result_msg(msg, result)
-                self._result_pub.publish(result_msg)
+                self._segment_image(msg)
 
             rate.sleep()
 
@@ -169,6 +132,51 @@ class planeNetNode(object):
             self._last_msg._rgb = self._cv_bridge.imgmsg_to_cv2(ros_rgb_img, 'bgr8')  # 32FC1 for depth images, bgr8 for color images
             self._last_msg._depth = self._cv_bridge.imgmsg_to_cv2(ros_depth_img, '32FC1')  # 32FC1 for depth images, bgr8 for color images
             self._msg_lock.release()
+
+    def _segment_image(self, msg):
+        rgb_img = msg._rgb
+        depth_img = msg._depth
+        depth_img = np.nan_to_num(depth_img)
+        #depth_img = depth_img*10000
+        #print("rgb_(min,max) 0: " + str(rgb_img[..., 0].min()) + "," + str(rgb_img[..., 0].max()))
+        #print("rgb_(min,max) 1: " + str(rgb_img[..., 1].min()) + "," + str(rgb_img[..., 1].max()))
+        #print("rgb_(min,max) 2: " + str(rgb_img[..., 2].min()) + "," + str(rgb_img[..., 2].max()))
+        #print("depth_(min,max): " + str(depth_img[...].min()) + "," + str(depth_img[...].max()))
+        # Run detection
+        # Bi-linear
+        image = skimage.transform.resize(rgb_img, (480, 640), order=1,
+                                     mode='reflect', preserve_range=True)
+        depth = skimage.transform.resize(depth_img, (480, 640), order=0,
+                                     mode='reflect', preserve_range=True)
+        image = image / 255
+        image = torch.from_numpy(image).float()
+        depth = torch.from_numpy(depth).float()
+        image = image.permute(2, 0, 1)
+        depth = torch.unsqueeze(depth, 0)
+
+        image = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                 std=[0.229, 0.224, 0.225])(image)
+        depth = torchvision.transforms.Normalize(mean=[19050],
+                                                 std=[9650])(depth)
+
+        image = image.to(device).unsqueeze_(0)
+        depth = depth.to(device).unsqueeze_(0)
+        #print("running inference")
+        result = self._model(image, depth)
+
+        color_label = utils.color_label(torch.max(result, 1)[1] + 1)[0]
+        img = color_label.cpu().numpy().transpose((1, 2, 0))
+        img = img.astype(np.uint8)
+        img_msg = self._cv_bridge.cv2_to_imgmsg(img, 'bgr8')
+        self._segimg_pub.publish(img_msg)
+
+        result_msg = self._build_result_msg(msg, result)
+        self._result_pub.publish(result_msg)
+
+#class RedNet(planeNetNode):
+#    def __init__(self):
+#        // invoke
+#    def segment_image(self, msg):
 
 def main():
     rospy.init_node('ros_rgbd_cnn_node')
