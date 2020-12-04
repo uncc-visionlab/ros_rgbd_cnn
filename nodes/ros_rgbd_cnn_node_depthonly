@@ -1,0 +1,139 @@
+#!/usr/bin/env python
+import os
+import threading
+import numpy as np
+
+import cv2
+from cv_bridge import CvBridge
+import rospy
+from sensor_msgs.msg import Image
+from sensor_msgs.msg import RegionOfInterest
+from std_msgs.msg import UInt8MultiArray
+
+import argparse
+import torch
+import imageio
+import skimage.transform
+import torchvision
+import torch.optim
+
+import sys
+sys.path.append('../src/')
+from ros_rgbd_cnn import RedNet_model_depth
+from ros_rgbd_cnn import utils
+from ros_rgbd_cnn.utils import load_ckpt
+
+import os
+import skimage.io
+import glob
+
+from ros_rgbd_cnn.msg import Result
+
+
+# Local path to trained weights file
+ROS_HOME = os.environ.get('ROS_HOME', os.path.join(os.environ['HOME'], '.ros'))
+DEPTH_MODEL_PATH = os.path.join(ROS_HOME, 'ckpt_epoch_depth_640*480_150.00.pth')
+REDNET_PRETRAINED_MODEL_PATH = os.path.join(ROS_HOME, 'ckpt_rednet_rgbd_pretrained.pth')
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
+class planeNetNode(object):
+    def __init__(self):
+        self._cv_bridge = CvBridge()
+
+        self._model = RedNet_model_depth.RedNet(pretrained=False)
+
+        # Load weights trained on depth only or RGBD
+        model_path = rospy.get_param('~model_path', DEPTH_MODEL_PATH)
+
+        # Download trained weights from Releases if needed
+        if model_path == DEPTH_MODEL_PATH and not os.path.exists(DEPTH_MODEL_PATH):
+            utils.download_trained_weights(depth, DEPTH_MODEL_PATH)
+            load_ckpt(self._model, None, DEPTH_MODEL_PATH, device)
+
+        
+        self._model.eval()
+        self._model.to(device)
+
+        self._last_msg = None
+        self._msg_lock = threading.Lock()
+
+
+        self._publish_rate = rospy.get_param('~publish_rate', 100)
+
+    def run(self):
+        self._result_pub = rospy.Publisher('~result', Result, queue_size=1)
+        segimg_pub = rospy.Publisher('segimg', Image, queue_size=1)
+        rospy.Subscriber('~depth', Image, self._image_callback, queue_size=1)
+
+        rate = rospy.Rate(self._publish_rate)
+        while not rospy.is_shutdown():
+            if self._msg_lock.acquire(False):
+                msg = self._last_msg
+                self._last_msg = None
+                self._msg_lock.release()
+            else:
+                rate.sleep()
+                continue
+
+            if msg is not None:
+                np_image = self._cv_bridge.imgmsg_to_cv2(msg, '32FC1')  # 32FC1 for depth images, bgr8 for color images
+
+                # Run detection
+                depth = skimage.transform.resize(np_image, (480, 640), order=0,
+                                     mode='reflect', preserve_range=True)
+                depth = torch.from_numpy(depth).float()
+                depth.unsqueeze_(0)
+                depth = torchvision.transforms.Normalize(mean=[19050], std=[9650])(depth)
+                depth = depth.to(device).unsqueeze_(0)
+
+                result = self._model(depth)
+
+                color_label = utils.color_label(torch.max(result, 1)[1] + 1)[0]
+                img = color_label.cpu().numpy().transpose((1, 2, 0))
+                img = img.astype(np.uint8)
+                img_msg = self._cv_bridge.cv2_to_imgmsg(img, 'bgr8')
+                segimg_pub.publish(img_msg)
+
+                result_msg = self._build_result_msg(msg, result)
+                self._result_pub.publish(result_msg)
+
+
+            rate.sleep()
+
+    def _build_result_msg(self, msg, result):
+        result_msg = Result()
+        result_msg.header = msg.header
+        
+        color_label = utils.color_label(torch.max(result, 1)[1] + 1)[0]
+        img = color_label.cpu().numpy().transpose(1, 2, 0)
+        img = img.astype(np.uint8)
+
+        result_image = Image()
+        result_image.header = msg.header
+        result_image.height = img.shape[0]
+        result_image.width = img.shape[1]
+        result_image.encoding = "mono8"
+        result_image.is_bigendian = False
+        result_image.step = result_image.width
+        result_image.data = img.tobytes()
+        #print(color_label_int.dtype)
+        #print((result_image.data).dtype)
+        result_msg.image.append(result_image)
+
+        return result_msg
+
+    def _image_callback(self, msg):
+        rospy.logdebug("Get an image")
+        if self._msg_lock.acquire(False):
+            self._last_msg = msg
+            self._msg_lock.release()
+
+def main():
+    rospy.init_node('ros_rgbd_cnn_node')
+
+    node = planeNetNode()
+    node.run()
+
+if __name__ == '__main__':
+    main()
