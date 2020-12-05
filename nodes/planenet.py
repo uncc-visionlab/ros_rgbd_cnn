@@ -90,7 +90,7 @@ class PlaneNet(RGBD_CNN_Core):
                 continue
 
             if msg is not None:
-                plane_img = self._estimate_planes(msg)
+                plane_img = self._estimate_planes(msg, 3, 1)
                 plane_img_msg = self._visualizePlaneImage(msg, plane_img)
                 self._planeimg_pub.publish(plane_img_msg)
                 #self._segment_image(msg)
@@ -106,9 +106,10 @@ class PlaneNet(RGBD_CNN_Core):
         image_msg = self._cv_bridge.cv2_to_imgmsg(vis_planes_img, encoding="bgr8")
         return image_msg
             
-    def _depthImage2ptcloud(self, msg):        
+    def _depthImage2ptcloud(self, msg, winsize = 1, stride = 1):        
         depth_img = msg._depth
-        ptCloud = np.zeros(shape=(depth_img.shape[0], depth_img.shape[1], 3), dtype=np.float32);
+        # smooth the depth image using winsize here
+        ptCloud = np.zeros(shape=(int(depth_img.shape[0]/stride), int(depth_img.shape[1]/stride), 3), dtype=np.float32);        
         for y in xrange(0, depth_img.shape[0], 1):
             for x in xrange(0, depth_img.shape[1], 1):
                 depth = depth_img[y, x]
@@ -119,16 +120,15 @@ class PlaneNet(RGBD_CNN_Core):
                 ptCloud[y, x, 2] = depth
         return ptCloud
 
-    def _estimate_planes(self, msg):
+    def _estimate_planes(self, msg, winsize = 3, stride = 1):
         rgb_img = msg._rgb
         depth_img = msg._depth
-        stride = 6
         # size of window is 2*halfwinsize+1        
-        halfwinsize = 4
-        winsize = 2*halfwinsize + 1
+        halfwinsize = int(0.5*(winsize-1))
+        #winsize = 2*halfwinsize + 1
         
-        ptCloud = self._depthImage2ptcloud(msg)
-        planes_img = np.zeros(shape=(depth_img.shape[0], depth_img.shape[1], 4), dtype=np.float32);
+        ptCloud = self._depthImage2ptcloud(msg, winsize, stride)        
+        planes_img = np.zeros(shape=(int(depth_img.shape[0]/stride), int(depth_img.shape[1]/stride), 4), dtype=np.float32);
         windowDepths = np.empty(shape=(2*halfwinsize+1, 2*halfwinsize+1), dtype=np.float32)
         for y in xrange(halfwinsize, depth_img.shape[0]- halfwinsize, 1):
             for x in xrange(halfwinsize, depth_img.shape[1]- halfwinsize, 1):
