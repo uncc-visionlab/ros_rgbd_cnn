@@ -22,6 +22,7 @@ import sys
 sys.path.append('../src/')
 from ros_rgbd_cnn import RedNet_model_depth
 from ros_rgbd_cnn import RedNet_model
+from ros_rgbd_cnn import RedNet_model_rgbplane
 from ros_rgbd_cnn import utils
 from ros_rgbd_cnn.utils import load_ckpt
 
@@ -31,6 +32,26 @@ import glob
 from ros_rgbd_cnn_core import RGBD_CNN_Core
 from ros_rgbd_cnn.msg import Result
 
+ROS_HOME = os.environ.get('ROS_HOME', os.path.join(os.environ['HOME'], '.ros'))
+#DEPTH_MODEL_PATH = os.path.join(ROS_HOME, 'ckpt_epoch_depth_640*480_150.00.pth')
+PLANENET_MODEL_PATH = os.path.join(ROS_HOME, 'ckpt_epoch_10.00_rgbdplane.pth')
+
+CLASS_NAMES =  ['wall', 'floor', 'cabinet', 'bed', 'chair', 'sofa', 'table', 'door', 'window',
+    'bookshelf', 'picture', 'counter', 'blinds', 'desk', 'shelves', 'curtain',
+    'dresser', 'pillow', 'mirror', 'floor_mat', 'clothes', 'ceiling', 'books',
+    'fridge', 'tv', 'paper', 'towel', 'shower_curtain', 'box', 'whiteboard',
+    'person', 'night_stand', 'toilet', 'sink', 'lamp', 'bathtub', 'bag']
+
+# Local path to trained weights file
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu");
+device = torch.device("cpu")
+if device.type == 'cuda':
+    print('Using '+ torch.cuda.get_device_name(0))
+
+image_w = 320
+image_h = 256
+
 class PlaneNet(RGBD_CNN_Core):
     def __init__(self):
         RGBD_CNN_Core.__init__(self)
@@ -38,7 +59,20 @@ class PlaneNet(RGBD_CNN_Core):
         self._ifocal_len = 1.0/530.0
         self._center_x = 320
         self._center_y = 240
+        self._model = RedNet_model.RedNet(pretrained=False)
 
+        # Load weights trained on depth only or RGBD
+        model_path = rospy.get_param('~rgbplane_model_path', PLANENET_MODEL_PATH)
+
+        # Download trained weights from Releases if needed
+        if model_path == PLANENET_MODEL_PATH and not os.path.exists(PLANENET_MODEL_PATH):
+            utils.download_trained_weights('rgbd', PLANENET_MODEL_PATH)      # this util method needs to be modified later  
+
+        load_ckpt(self._model, None, model_path, device)
+        self._model.eval()
+        self._model.to(device)
+
+    
     def run(self):
         self._result_pub = rospy.Publisher('~result', Result, queue_size=1)
         self._segimg_pub = rospy.Publisher('segimg', Image, queue_size=1)
@@ -123,25 +157,33 @@ class PlaneNet(RGBD_CNN_Core):
         #print("depth_(min,max): " + str(depth_img[...].min()) + "," + str(depth_img[...].max()))
         # Run detection
         # Bi-linear
-        image = skimage.transform.resize(rgb_img, (480, 640), order=1,
+        image = skimage.transform.resize(rgb_img, (image_h, image_w), order=1,
                                      mode='reflect', preserve_range=True)
-        depth = skimage.transform.resize(depth_img, (480, 640), order=0,
-                                     mode='reflect', preserve_range=True)
+        #depth = skimage.transform.resize(depth_img, (image_h, image_w), order=0,
+        #                             mode='reflect', preserve_range=True)
+        
+        #plane goes here. Need to be resized to (image_h, image_w)
+        plane = plane                        
         image = image / 255
         image = torch.from_numpy(image).float()
-        depth = torch.from_numpy(depth).float()
+        #depth = torch.from_numpy(depth).float()
+        plane = torch.from_numpy(depth).float()
         image = image.permute(2, 0, 1)
-        depth = torch.unsqueeze(depth, 0)
-
+        plane = plane.permute(2, 0, 1)
+        #depth = torch.unsqueeze(depth, 0)
+        
+        plane *= 10000
         image = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                  std=[0.229, 0.224, 0.225])(image)
-        depth = torchvision.transforms.Normalize(mean=[19050],
-                                                 std=[9650])(depth)
+        #depth = torchvision.transforms.Normalize(mean=[19050],
+        #                                         std=[9650])(depth)
+        plane = torchvision.transforms.Normalize(mean=[0, 0, 0, 19050],
+                                                 std=[5000, 5000, 5000, 9650])(plane)
 
         image = image.to(device).unsqueeze_(0)
-        depth = depth.to(device).unsqueeze_(0)
-        #print("running inference")
-        result = self._model(image, depth)
+        #depth = depth.to(device).unsqueeze_(0)
+        plane = plane.to(device).unsqueeze_(0)
+        result = self._model(image, plane)
 
         color_label = utils.color_label(torch.max(result, 1)[1] + 1)[0]
         img = color_label.cpu().numpy().transpose((1, 2, 0))

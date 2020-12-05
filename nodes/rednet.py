@@ -54,7 +54,7 @@ class RedNet(RGBD_CNN_Core):
         self._model = RedNet_model.RedNet(pretrained=False)
 
         # Load weights trained on depth only or RGBD
-        model_path = rospy.get_param('~model_path', REDNET_PRETRAINED_MODEL_PATH)
+        model_path = rospy.get_param('~rgbd_model_path', REDNET_PRETRAINED_MODEL_PATH)
 
         # Download trained weights from Releases if needed
         if model_path == REDNET_PRETRAINED_MODEL_PATH and not os.path.exists(REDNET_PRETRAINED_MODEL_PATH):

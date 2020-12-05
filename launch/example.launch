@@ -2,7 +2,8 @@
     <node name="ros_rgbd_cnn_node" pkg="ros_rgbd_cnn" type="ros_rgbd_cnn_node" output="screen">
         <remap from="~rgb" to="/camera/rgb/image_color" />
         <remap from="~depth" to="/camera/depth/image" />
-        <param name="~model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_rednet_rgbd_pretrained.pth" />
+        <param name="~rgbd_model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_rednet_rgbd_pretrained.pth" />
+        <param name="~rgbplane_model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_epoch_10.00_rgbplane.pth" />
         <param name="~result" value="true" />
         <param name="~segimg" value="true" />
     </node>
