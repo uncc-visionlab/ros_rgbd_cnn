@@ -8,7 +8,7 @@ import cv2
 from cv_bridge import CvBridge
 import rospy
 import message_filters
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import UInt8MultiArray
 
 import argparse
@@ -41,7 +41,15 @@ class RGBD_CNN_Core(object):
         self._last_msg = None
         self._msg_lock = threading.Lock()
 
-        self._publish_rate = rospy.get_param('~publish_rate', 100)
+        self._publish_rate = rospy.get_param('~publish_rate', 100)     
+
+        print("Waiting for CameraInfo message ....")
+        camera_info_msg = rospy.wait_for_message('~depth/camera_info', CameraInfo, timeout=None)
+        self._ifocal_length_x = 1.0/camera_info_msg.K[0]
+        self._ifocal_length_y = 1.0/camera_info_msg.K[4]
+        self._center_x = camera_info_msg.K[2]
+        self._center_y = camera_info_msg.K[5]
+        print("Received CameraInfo message.")
 
     def _sync_callback(self, ros_rgb_img, ros_depth_img):
         rospy.logdebug("Got a synchronized RGB & depth image")

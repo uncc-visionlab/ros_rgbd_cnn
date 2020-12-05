@@ -22,7 +22,7 @@ import sys
 sys.path.append('../src/')
 from ros_rgbd_cnn import RedNet_model_depth
 from ros_rgbd_cnn import RedNet_model
-from ros_rgbd_cnn import RedNet_model_rgbplane
+#from ros_rgbd_cnn import RedNet_model_rgbplane
 from ros_rgbd_cnn import utils
 from ros_rgbd_cnn.utils import load_ckpt
 
@@ -56,13 +56,10 @@ class PlaneNet(RGBD_CNN_Core):
     def __init__(self):
         RGBD_CNN_Core.__init__(self)
         self._plane_img = None
-        self._ifocal_len = 1.0/530.0
-        self._center_x = 320
-        self._center_y = 240
         self._model = RedNet_model.RedNet(pretrained=False)
-
+        
         # Load weights trained on depth only or RGBD
-        model_path = rospy.get_param('~rgbplane_model_path', PLANENET_MODEL_PATH)
+        model_path = rospy.get_param('~model_path', PLANENET_MODEL_PATH)
 
         # Download trained weights from Releases if needed
         if model_path == PLANENET_MODEL_PATH and not os.path.exists(PLANENET_MODEL_PATH):
@@ -76,6 +73,7 @@ class PlaneNet(RGBD_CNN_Core):
     def run(self):
         self._result_pub = rospy.Publisher('~result', Result, queue_size=1)
         self._segimg_pub = rospy.Publisher('segimg', Image, queue_size=1)
+        self._planeimg_pub = rospy.Publisher('planeimg', Image, queue_size=1)
         rgb_sub = message_filters.Subscriber('~rgb', Image, queue_size=1)
         depth_sub = message_filters.Subscriber('~depth', Image, queue_size=1)
         ts = message_filters.ApproximateTimeSynchronizer([rgb_sub, depth_sub], 10, 0.1, allow_headerless=True)
@@ -92,58 +90,85 @@ class PlaneNet(RGBD_CNN_Core):
                 continue
 
             if msg is not None:
-                self._estimate_planes(msg)
-                self._segment_image(msg)
+                plane_img = self._estimate_planes(msg)
+                plane_img_msg = self._visualizePlaneImage(msg, plane_img)
+                self._planeimg_pub.publish(plane_img_msg)
+                #self._segment_image(msg)
 
             rate.sleep()
+            
+    def _visualizePlaneImage(self, msg, plane_img):
+        vis_planes_img = np.zeros(shape=(plane_img.shape[0], plane_img.shape[1], 3), dtype=np.uint8);
+        for y in xrange(0, plane_img.shape[0], 1):
+            for x in xrange(0, plane_img.shape[1], 1):
+                if (~np.isnan(plane_img[y,x,2])):
+                    vis_planes_img[y, x, :] = plane_img[y, x, 2]*255                
+        image_msg = self._cv_bridge.cv2_to_imgmsg(vis_planes_img, encoding="bgr8")
+        return image_msg
+            
+    def _depthImage2ptcloud(self, msg):        
+        depth_img = msg._depth
+        ptCloud = np.zeros(shape=(depth_img.shape[0], depth_img.shape[1], 3), dtype=np.float32);
+        for y in xrange(0, depth_img.shape[0], 1):
+            for x in xrange(0, depth_img.shape[1], 1):
+                depth = depth_img[y, x]
+                if (~np.isnan(depth)):
+                    #print(depth)
+                    ptCloud[y, x, 0] = self._ifocal_length_x * (x - self._center_x) * depth
+                    ptCloud[y, x, 1] = self._ifocal_length_y * (y - self._center_y) * depth
+                ptCloud[y, x, 2] = depth
+        return ptCloud
 
     def _estimate_planes(self, msg):
         rgb_img = msg._rgb
         depth_img = msg._depth
-        # size of window is 2*halfwinsize+1
-        halfwinsize = 1;
-        Y = np.empty(shape=(2*halfwinsize+1, 2*halfwinsize+1), dtype=np.float32)
-        for x in xrange(halfwinsize,depth_img.shape[0]-halfwinsize,1):
-            if (x % 10 == 0):
-                print x
-            for y in xrange(halfwinsize,depth_img.shape[0]-halfwinsize,1):
-                Y = depth_img[np.ix_([y - halfwinsize, y + halfwinsize], [x-halfwinsize, x+halfwinsize])]
-                Y = Y.flatten()
-                for p in xrange(len(Y)):
-                    x3d = self._ifocal_len * (Y[p] - self._center_x)
-                    y3d = self._ifocal_len * (Y[p] - self._center_y)
-                    z3d = Y[p];
+        stride = 6
+        # size of window is 2*halfwinsize+1        
+        halfwinsize = 4
+        winsize = 2*halfwinsize + 1
+        
+        ptCloud = self._depthImage2ptcloud(msg)
+        planes_img = np.zeros(shape=(depth_img.shape[0], depth_img.shape[1], 4), dtype=np.float32);
+        windowDepths = np.empty(shape=(2*halfwinsize+1, 2*halfwinsize+1), dtype=np.float32)
+        for y in xrange(halfwinsize, depth_img.shape[0]- halfwinsize, 1):
+            for x in xrange(halfwinsize, depth_img.shape[1]- halfwinsize, 1):
+                windowDepths = depth_img[(y - halfwinsize):(y + halfwinsize + 1), (x - halfwinsize):(x + halfwinsize + 1)]
+                #print(windowDepths)
+                numValidPoints = np.count_nonzero(~np.isnan(windowDepths))
+                #print(numValidPoints)
+                if (numValidPoints < 3):
+                    plane3 = np.array([0,0,0,0]);
+                else:                    
+                    pts3D = np.empty(shape=(numValidPoints,3), dtype=np.float32);                    
+                    offset = 0;
+                    #print(pts3D)
+                    for ywin in xrange(-halfwinsize, halfwinsize + 1):
+                        for xwin in xrange(-halfwinsize, halfwinsize + 1):
+                            if (~np.isnan(ptCloud[y + ywin, x + xwin, 2])):
+                                pts3D[offset,:] = ptCloud[y + ywin, x + xwin, :]
+                                offset += 1                                                      
+
+                    #print("pts3D = " + str(pts3D))
+                    plane3 = self._fitPlaneImplicitLeastSquares(pts3D)
                     
-                a=1                
-    def fitPlaneImplicitLeastSquares(self, points):
-        from numpy import linalg as LA
-        plane3 = np.empty(shape=(4,1), dtype=np.float32)
-
-        _M = np.zeros(shape=(num_points, 3), dtype=float32)        
-        centroid = np.zeros(shape(3,1), dtype=float32)
-        for ptIdx in xrange(num_points):
-            centroid += points;
-        centroid /= num_points;
-        #for (size_t ptIdx = 0; ptIdx < num_points; ++ptIdx) {
-        #    size_t pt_begin = stride*ptIdx;
-        #    M[3 * ptIdx] = points[pt_begin] - centroid.x;
-        #    M[3 * ptIdx + 1] = points[pt_begin + 1] - centroid.y;
-        #    M[3 * ptIdx + 2] = points[pt_begin + 2] - centroid.z;
-        _MtM = np.zeros(shape=(4,4), dtype=float32)        
-        _MtM = np.dot(_M.transpose(), _M)
-        [w, v] = LA.linalg.eigh(_MtM)
-        # v[:, 0]
-        #cv::Mat _planeCoeffs = eigVecs.row(2).t();
-
-        #plane3.x = _planeCoeffs.at<scalar_t>(0);
-        #plane3.y = _planeCoeffs.at<scalar_t>(1);
-        #plane3.z = _planeCoeffs.at<scalar_t>(2);
-        #plane3.d = -(plane3.x * centroid.x + plane3.y * centroid.y + plane3.z * centroid.z);
-        #plane3.scale((plane3.z > 0) ? -1.0 : 1.0);
-
-        #return plane3;
-
+                planes_img[y,x,:] = plane3
+        return planes_img
+                    
                 
+    def _fitPlaneImplicitLeastSquares(self, points):
+        from numpy import linalg as LA
+        plane3 = np.empty(shape=(4), dtype=np.float32)
+        _M = np.zeros(shape=(points.shape[0], 3), dtype=np.float32)        
+        centroid = np.mean(points, 0)
+        demeaned_pts3D = points - centroid        
+        _MtM = np.dot(demeaned_pts3D.transpose(), demeaned_pts3D)
+        [w, v] = LA.linalg.eigh(_MtM)
+        plane3[0:3] = v[:,0]
+        plane3[3] = -np.dot(plane3[0:3],centroid[:])
+        if (plane3[2] > 0):
+            plane3 = -plane3
+        #print(plane3)
+        return plane3
     
     def _segment_image(self, msg):
         return

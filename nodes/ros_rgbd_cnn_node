@@ -32,8 +32,13 @@ from rednet import RedNet
 def main():
     rospy.init_node('ros_rgbd_cnn_node')
 
-    #node = RedNet()
-    node = PlaneNet()
+    algorithm = rospy.get_param('~algorithm', 'rednet')     
+
+    if (algorithm == 'rednet'):
+        node = RedNet()
+    elif (algorithm == 'planenet'):
+        node = PlaneNet()
+
     node.run()
 
 if __name__ == '__main__':
