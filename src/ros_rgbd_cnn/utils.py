@@ -46,6 +46,175 @@ label_colours = [(0, 0, 0),
                  (139, 110, 246)]
 
 
+'''
+#An example of using depth2plane:
+intrinsicPath = './data/SUNRGBD/kv1/NYUdata/NYU0002/intrinsics.txt'
+fittingSize = 2
+extrinsicPath = './data/SUNRGBD/kv1/NYUdata/NYU0002/extrinsics/20150118235913.txt'
+import imageio
+from utils.utils import depth2plane
+depth = imageio.imread('./data/SUNRGBD/kv1/NYUdata/NYU0002/depth_bfx/NYU0002.png')
+labelPath = './data/SUNRGBD/kv1/NYUdata/NYU0002/label/label.npy'
+plane = depth2plane(depth, extrinsicPath, intrinsicPath, labelPath, fittingSize)
+newLabel = plane.getPlaneLabel()
+planeImage = plane.getPlaneImage()
+plane.visualizePlaneImage(planeImage)
+rgbPath = './data/SUNRGBD/kv1/NYUdata/NYU0002/image/NYU0002.jpg'
+plane.visualizePointCloud(rgbPath)
+'''
+
+
+class depth2plane:
+    def __init__(self, depth, extrinsicPath, intrinsicPath, labelPath, fittingSize=5):
+        self.depthImage = depth
+        self.extrinsicPath = extrinsicPath
+        self.intrinsicPath = intrinsicPath
+        self.fittingSize = fittingSize
+        self.labelPath = labelPath
+
+    def getPlaneImage(self):
+        planeImage = self.estimate_planes()
+        planeImage = self.smoothing(planeImage)
+        return planeImage
+
+    def getPlaneLabel(self):
+        label = np.load(self.labelPath)
+        winsize = self.fittingSize
+        halfwinsize = max(1, int(0.5 * (winsize - 1)))
+        newLabel = np.zeros(shape=(int(label.shape[0] / winsize), int(label.shape[1] / winsize)))
+        for y in range(halfwinsize, label.shape[0] - halfwinsize, winsize):
+            for x in range(halfwinsize, label.shape[1] - halfwinsize, winsize):
+                windowLabels = label[(y - halfwinsize):(y + halfwinsize + 1), (x - halfwinsize):(x + halfwinsize + 1)]
+                newLabel[int(y / winsize), int(x / winsize)] = np.max(windowLabels)
+        return newLabel
+
+    def matrix_from_txt(self, file):
+        contents = open(file).read()
+        matrix = [item.split() for item in contents.split('\n')[:-1]]
+        matrix = np.array(matrix, dtype=np.float32)
+        return matrix
+
+    def getCameraInfo(self):
+        contents = open(self.intrinsicPath).read()
+        K = [item.split() for item in contents.split(' ')[:-1]]
+        K = np.array(K, dtype=np.float32)
+        ifocal_length_x = 1.0/K[0]
+        ifocal_length_y = 1.0/K[4]
+        center_x = K[2]
+        center_y = K[5]
+        camera_pose = self.matrix_from_txt(self.extrinsicPath)
+        Rtilt = camera_pose[0:3, 0:3]
+        A = np.array([1, 0, 0, 0, 0, 1, 0, -1, 0], dtype=np.float32)
+        A = A.reshape(3, 3)
+        B = np.array([1, 0, 0, 0, 0, -1, 0, 1, 0], dtype=np.float32)
+        B = B.reshape(3, 3)
+        #Rtilt = A*Rtilt*B
+        Rtilt = np.matmul(np.matmul(A, Rtilt), B)
+        return ifocal_length_x, ifocal_length_y, center_x, center_y, Rtilt
+
+    def bitShiftDepthMap(self, depthImage):
+        depthVisData = np.asarray(depthImage, np.uint16)
+        depthInpaint = np.bitwise_or(np.right_shift(depthVisData, 3), np.left_shift(depthVisData, 16 - 3))
+        depthInpaint = depthInpaint.astype(np.single) / 1000
+        depthInpaint[depthInpaint > 8] = 8
+        return depthInpaint
+
+    def depthImage2ptcloud(self, depth_img):
+        [ifocal_length_x, ifocal_length_y, center_x, center_y, Rtilt] = self.getCameraInfo()
+        '''
+        ptCloud = np.zeros(shape=(int(depth_img.shape[0]), int(depth_img.shape[1]), 3), dtype=np.float32)
+        for y in range(0, depth_img.shape[0]):
+            for x in range(0, depth_img.shape[1]):
+                depth = depth_img[y, x]
+                if (~np.isnan(depth)):
+                    # print(depth)
+                    ptCloud[y, x, 0] = ifocal_length_x * (x - center_x) * depth
+                    ptCloud[y, x, 1] = ifocal_length_y * (y - center_y) * depth
+                ptCloud[y, x, 2] = depth
+        '''
+        #invalid = depth_img == 0
+        x, y = np.meshgrid(np.arange(depth_img.shape[1], dtype=np.float32), np.arange(depth_img.shape[0], dtype=np.float32))
+        xw = (x - center_x) * depth_img * ifocal_length_x
+        yw = (y - center_y) * depth_img * ifocal_length_y
+        zw = depth_img
+        points3dMatrix = np.stack((xw, zw, -yw), axis=2)
+        #points3dMatrix[np.stack((invalid, invalid, invalid), axis=2)] = np.nan  # no zero-depth pixels when using depth_bfx
+        points3d = points3dMatrix.reshape(-1, 3)   # [height*width, 3]
+        ptCloud = (np.matmul(Rtilt, points3d.T)).T
+        ptCloud.astype(np.float32)
+        ptCloud = ptCloud.reshape(depth_img.shape[0], depth_img.shape[1], 3)   # [height, width, 3]
+        return ptCloud, points3d
+
+    def estimate_planes(self):
+        winsize = self.fittingSize
+        depthImage = self.depthImage
+        #depthImage = self.smoothing(depthImage, filtersize=3)  # smoothing the inpainted depth image will cause bad fitting result
+        depth_img = self.bitShiftDepthMap(depthImage)
+        # size of window is 2*halfwinsize+1
+        halfwinsize = max(1, int(0.5 * (winsize - 1)))
+        [ptCloud, _] = self.depthImage2ptcloud(depth_img)
+        planes_img = np.zeros(shape=(int(depth_img.shape[0] / winsize), int(depth_img.shape[1] / winsize), 4), dtype=np.float32)
+        for y in range(halfwinsize, depth_img.shape[0] - halfwinsize, winsize):
+            for x in range(halfwinsize, depth_img.shape[1] - halfwinsize, winsize):
+                windowDepths = depth_img[(y - halfwinsize):(y + halfwinsize + 1), (x - halfwinsize):(x + halfwinsize + 1)]
+                # print(windowDepths)
+                numValidPoints = np.count_nonzero(~np.isnan(windowDepths))
+                # print(numValidPoints)
+                if (numValidPoints < 3):
+                    plane3 = np.array([0, 0, 0, 0])
+                else:
+                    pts3D = np.empty(shape=(numValidPoints, 3), dtype=np.float32)
+                    offset = 0
+                    # print(pts3D)
+                    for ywin in range(-halfwinsize, halfwinsize + 1):
+                        for xwin in range(-halfwinsize, halfwinsize + 1):
+                            if (~np.isnan(ptCloud[y + ywin, x + xwin, 2])):
+                                pts3D[offset, :] = ptCloud[y + ywin, x + xwin, :]
+                                offset += 1
+                    plane3 = self.fitPlaneImplicitLeastSquares(pts3D)
+                planes_img[int(y/winsize), int(x/winsize), :] = plane3
+        return planes_img
+
+    def fitPlaneImplicitLeastSquares(self, points):
+        from numpy import linalg as LA
+        plane3 = np.empty(shape=(4), dtype=np.float32)
+        centroid = np.mean(points, 0)
+        demeaned_pts3D = points - centroid
+        _MtM = np.dot(demeaned_pts3D.transpose(), demeaned_pts3D)
+        [_, v] = LA.linalg.eigh(_MtM)
+        plane3[0:3] = v[:, 0]
+        plane3[3] = -np.dot(plane3[0:3], centroid[:])
+        #if (plane3[2] > 0):
+        #    plane3 = -plane3   # might not be necessary since we flipped y-axis when generating the point cloud
+        return plane3
+
+    def smoothing(self, img, filtersize=11):
+        img = cv2.GaussianBlur(img, (filtersize, filtersize), cv2.BORDER_CONSTANT)
+        return img
+
+    def visualizePlaneImage(self, plane_img):
+        imageio.imwrite('0002.tiff', plane_img)
+        #cv2.namedWindow("planeImage", cv2.WINDOW_NORMAL)
+        cv2.imshow("planeImage", plane_img[:, :, 0:3])
+        cv2.imshow("a", plane_img[:, :, 0])
+        cv2.imshow("b", plane_img[:, :, 1])
+        cv2.imshow("c", plane_img[:, :, 2])
+        cv2.imshow("d", plane_img[:, :, 3])
+        cv2.waitKey()
+
+    def visualizePointCloud(self, rgbpath):
+        depthImage = self.depthImage
+        depth_img = self.bitShiftDepthMap(depthImage)
+        [_, points3d] = self.depthImage2ptcloud(depth_img)
+        im = np.asarray(Image.open(rgbpath))
+        rgb = im.astype(np.double) / np.iinfo(im.dtype).max
+        rgb = rgb.reshape(-1, 3)
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(points3d[:, 0], points3d[:, 1], points3d[:, 2], c=rgb)
+        plt.show()
+
+
 def download_trained_weights(model_name, model_path, verbose=1):
     """
     Download trained weights from previous training on depth images or rgbd images.
