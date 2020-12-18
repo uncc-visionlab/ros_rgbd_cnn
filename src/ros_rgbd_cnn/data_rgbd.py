@@ -10,8 +10,8 @@ import skimage.transform
 import random
 import torchvision
 import torch
-#from train_rgbd import image_h, image_w
-from test_rgbd import image_h, image_w
+from train_rgbd import image_h, image_w
+#from test_rgbd import image_h, image_w
 
 img_dir_train_file = './data/img_dir_train.txt'
 depth_dir_train_file = './data/depth_dir_train.txt'

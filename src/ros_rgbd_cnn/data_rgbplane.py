@@ -11,8 +11,8 @@ import random
 import torchvision
 import torch
 from ros_rgbd_cnn.utils import depth2plane
-#from train_rgbplane import image_h, image_w, fittingSize
-from test_rgbplane import image_h, image_w, fittingSize
+from train_rgbplane import image_h, image_w, fittingSize
+#from test_rgbplane import image_h, image_w, fittingSize
 
 img_dir_train_file = './data/img_dir_train.txt'
 depth_dir_train_file = './data/depth_dir_train.txt'

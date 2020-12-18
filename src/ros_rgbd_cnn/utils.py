@@ -2,10 +2,6 @@ import numpy as np
 from torch import nn
 import torch
 import os
-import cv2
-import matplotlib.pyplot as plt
-from PIL import Image
-import imageio
 import sys
 from six.moves.urllib import request
 import shutil
