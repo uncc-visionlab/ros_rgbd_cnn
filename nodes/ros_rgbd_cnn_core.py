@@ -20,8 +20,7 @@ import torch.optim
 
 import sys
 sys.path.append('../src/')
-from ros_rgbd_cnn import RedNet_model_depth
-from ros_rgbd_cnn import RedNet_model
+from ros_rgbd_cnn import model_rgbd
 from ros_rgbd_cnn import utils
 from ros_rgbd_cnn.utils import load_ckpt
 
@@ -45,10 +44,12 @@ class RGBD_CNN_Core(object):
 
         print("Waiting for CameraInfo message ....")
         camera_info_msg = rospy.wait_for_message('~depth/camera_info', CameraInfo, timeout=None)
-        self._ifocal_length_x = 1.0/camera_info_msg.K[0]
-        self._ifocal_length_y = 1.0/camera_info_msg.K[4]
-        self._center_x = camera_info_msg.K[2]
-        self._center_y = camera_info_msg.K[5]
+        self.intrinsic = np.array(camera_info_msg.K)
+        self.extrinsic = np.array(camera_info_msg.P)
+        #self._ifocal_length_x = 1.0/camera_info_msg.K[0]
+        #self._ifocal_length_y = 1.0/camera_info_msg.K[4]
+        #self._center_x = camera_info_msg.K[2]
+        #self._center_y = camera_info_msg.K[5]
         print("Received CameraInfo message.")
 
     def _sync_callback(self, ros_rgb_img, ros_depth_img):

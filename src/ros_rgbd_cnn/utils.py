@@ -10,6 +10,10 @@ import sys
 from six.moves.urllib import request
 import shutil
 import contextlib
+import cv2
+import matplotlib.pyplot as plt
+from PIL import Image
+import imageio
 
 
 med_frq = [0.382900, 0.452448, 0.637584, 0.377464, 0.585595,
@@ -29,9 +33,6 @@ model_urls = {
     'resnet152': 'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
 }
 
-DEPTH_TRAINED_MODEL = "https://drive.google.com/uc?export=download&id=1ezJOTP8KGSbj8M3Fdldws1-XWAMK9pr5"
-REDNET_PRETRAINED_MODEL = "https://drive.google.com/uc?export=download&id=18E0hAYEvCPAIPGnwXpqi2Im-wAdGPN7_"
-
 label_colours = [(0, 0, 0),
                  # 0=background
                  (148, 65, 137), (255, 116, 69), (86, 156, 137),
@@ -49,72 +50,73 @@ label_colours = [(0, 0, 0),
                  (161, 176, 169), (80, 29, 135), (177, 105, 197),
                  (139, 110, 246)]
 
+'''
+def download_trained_weights(model_name, model_path, verbose=1):
+    """
+    Download trained weights from previous training on depth images or rgbd images.
+    """
+    # depth_model_path: local path of depth trained weights
+    
+    if verbose > 0:
+        print("Downloading pretrained model to " + model_path + " ...")
+    if model_name == 'depth':
+        with contextlib.closing(request.urlopen(DEPTH_TRAINED_MODEL)) as resp, open(model_path, 'wb') as out:
+            shutil.copyfileobj(resp, out)
+    elif model_name == 'rgbd':
+        with contextlib.closing(request.urlopen(REDNET_PRETRAINED_MODEL)) as resp, open(model_path, 'wb') as out:
+            shutil.copyfileobj(resp, out)
+    if verbose > 0:
+        print("... done downloading pretrained model!")
+'''         
 
 '''
 #An example of using depth2plane:
-intrinsicPath = '$dataPath$/data/SUNRGBD/kv1/NYUdata/NYU0002/intrinsics.txt'
 fittingSize = 2
-extrinsicPath = '$dataPath$/data/SUNRGBD/kv1/NYUdata/NYU0002/extrinsics/20150118235913.txt'
 import imageio
-from utils import depth2plane
-depth = imageio.imread('$dataPath$/data/SUNRGBD/kv1/NYUdata/NYU0002/depth_bfx/NYU0002.png')
-#labelPath = '$dataPath$/data/SUNRGBD/kv1/NYUdata/NYU0002/label/label.npy'
-plane = depth2plane(depth, extrinsicPath, intrinsicPath, fittingSize)
-newLabel = plane.getPlaneLabel()
+from utils.utils import depth2plane
+depth = imageio.imread('./data/SUNRGBD/kv1/NYUdata/NYU0002/depth_bfx/NYU0002.png')
+plane = depth2plane(depth, extrinsic, intrinsic, fittingSize)
 planeImage = plane.getPlaneImage()
-#plane.visualizePlaneImage(planeImage)
-#rgbPath = '$dataPath$/data/SUNRGBD/kv1/NYUdata/NYU0002/image/NYU0002.jpg'
-#plane.visualizePointCloud(rgbPath)
+plane.visualizePlaneImage(planeImage)
 '''
 
 
 class depth2plane:
-    def __init__(self, depth, extrinsicPath, intrinsicPath, fittingSize=5):  # add labelPath as one argument if needed
+    def __init__(self, depth, extrinsic, intrinsic, fittingSize=5):
         self.depthImage = depth
-        self.extrinsicPath = extrinsicPath
-        self.intrinsicPath = intrinsicPath
+        self.extrinsic = extrinsic
+        self.intrinsic = intrinsic
         self.fittingSize = fittingSize
-        #self.labelPath = labelPath
 
     def getPlaneImage(self):
         planeImage = self.estimate_planes()
         return planeImage
 
-    def getPlaneLabel(self):
-        label = np.load(self.labelPath)
-        winsize = self.fittingSize
-        #halfwinsize = int(0.5 * winsize)
-        newLabel = np.zeros(shape=(int(label.shape[0] / winsize), int(label.shape[1] / winsize)))
-        #for y in range(halfwinsize, label.shape[0] - halfwinsize, winsize):
-        for y in range(0, label.shape[0]-winsize, winsize):
-            for x in range(0, label.shape[1]-winsize, winsize):
-                windowLabels = label[y:(y + winsize + 1), x:(x + winsize + 1)]
-
-                newLabel[int(y / winsize), int(x / winsize)] = np.max(windowLabels)
-        return newLabel
-
     def matrix_from_txt(self, file):
-        contents = open(file).read()
-        matrix = [item.split() for item in contents.split('\n')[:-1]]
-        matrix = np.array(matrix, dtype=np.float32)
+        f = open(file)
+        l = []
+        for line in f.readlines():
+            line = line.strip('\n')
+            for j in range(len(list(line.split()))):
+                l.append(line.split()[j])
+        matrix = np.array(l, dtype=np.float32)
         return matrix
 
     def getCameraInfo(self):
-        contents = open(self.intrinsicPath).read()
-        K = [item.split() for item in contents.split(' ')[:-1]]
-        K = np.array(K, dtype=np.float32)
+        K = self.intrinsic
         ifocal_length_x = 1.0/K[0]
         ifocal_length_y = 1.0/K[4]
         center_x = K[2]
         center_y = K[5]
-        camera_pose = self.matrix_from_txt(self.extrinsicPath)
+        camera_pose = self.extrinsic
+        camera_pose = camera_pose.reshape(3, 4)
         Rtilt = camera_pose[0:3, 0:3]
-        A = np.array([1, 0, 0, 0, 0, 1, 0, -1, 0], dtype=np.float32)
-        A = A.reshape(3, 3)
-        B = np.array([1, 0, 0, 0, 0, -1, 0, 1, 0], dtype=np.float32)
-        B = B.reshape(3, 3)
+        #A = np.array([1, 0, 0, 0, 0, 1, 0, -1, 0], dtype=np.float32)
+        #A = A.reshape(3, 3)
+        #B = np.array([1, 0, 0, 0, 0, -1, 0, 1, 0], dtype=np.float32)
+        #B = B.reshape(3, 3)
         #Rtilt = A*Rtilt*B
-        Rtilt = np.matmul(np.matmul(A, Rtilt), B)
+        #Rtilt = np.matmul(np.matmul(A, Rtilt), B)
         return ifocal_length_x, ifocal_length_y, center_x, center_y, Rtilt
 
     def bitShiftDepthMap(self, depthImage):
@@ -126,38 +128,29 @@ class depth2plane:
 
     def depthImage2ptcloud(self, depth_img):
         [ifocal_length_x, ifocal_length_y, center_x, center_y, Rtilt] = self.getCameraInfo()
-        '''
-        ptCloud = np.zeros(shape=(int(depth_img.shape[0]), int(depth_img.shape[1]), 3), dtype=np.float32)
-        for y in range(0, depth_img.shape[0]):
-            for x in range(0, depth_img.shape[1]):
+        ptCloud = np.zeros(shape=(int(depth_img.shape[0]), int(depth_img.shape[1]), 3), dtype=np.float32)        
+        for y in xrange(0, depth_img.shape[0]):
+            for x in xrange(0, depth_img.shape[1]):
                 depth = depth_img[y, x]
                 if (~np.isnan(depth)):
-                    # print(depth)
+                    #print(depth)
                     ptCloud[y, x, 0] = ifocal_length_x * (x - center_x) * depth
                     ptCloud[y, x, 1] = ifocal_length_y * (y - center_y) * depth
                 ptCloud[y, x, 2] = depth
-        '''
-        #invalid = depth_img == 0
-        x, y = np.meshgrid(np.arange(depth_img.shape[1], dtype=np.float32), np.arange(depth_img.shape[0], dtype=np.float32))
-        xw = (x - center_x) * depth_img * ifocal_length_x
-        yw = (y - center_y) * depth_img * ifocal_length_y
-        zw = depth_img
-        points3dMatrix = np.stack((xw, zw, -yw), axis=2)
-        #points3dMatrix[np.stack((invalid, invalid, invalid), axis=2)] = np.nan  # no zero-depth pixels when using depth_bfx
-        points3d = points3dMatrix.reshape(-1, 3)   # [height*width, 3]
+        points3d = ptCloud.reshape(-1, 3)   # [height*width, 3]
         ptCloud = (np.matmul(Rtilt, points3d.T)).T
         ptCloud.astype(np.float32)
         ptCloud = ptCloud.reshape(depth_img.shape[0], depth_img.shape[1], 3)   # [height, width, 3]
-        return ptCloud, points3d
+        return ptCloud
 
     def estimate_planes(self):
         winsize = self.fittingSize
         depthImage = self.depthImage
-        #depthImage = self.smoothing(depthImage, filtersize=3)  # smoothing the inpainted depth image will cause bad fitting result
-        depth_img = self.bitShiftDepthMap(depthImage)
-        # size of window is 2*halfwinsize+1
-        [ptCloud, _] = self.depthImage2ptcloud(depth_img)
-        #ptCloud = self.smoothing(ptCloud, filtersize=5)
+        depthImage = self.smoothing(depthImage, filtersize=3)  
+        #depth_img = self.bitShiftDepthMap(depthImage) # no need to shift in real scenerio
+        depth_img = depthImage 
+        ptCloud = self.depthImage2ptcloud(depth_img)
+        #ptCloud = self.smoothing(ptCloud, filtersize=5)  #  smoothing the inpainted depth image will cause inconvergence in fitting
         planes_img = np.zeros(shape=(int(depth_img.shape[0] / winsize), int(depth_img.shape[1] / winsize), 4), dtype=np.float32)
         for y in range(0, depth_img.shape[0]-winsize, winsize):
             for x in range(0, depth_img.shape[1]-winsize, winsize):
@@ -185,63 +178,32 @@ class depth2plane:
         plane3 = np.empty(shape=(4), dtype=np.float32)
         centroid = np.mean(points, 0)
         demeaned_pts3D = points - centroid
-        #_MtM = np.dot(demeaned_pts3D.transpose(), demeaned_pts3D)
         _MtM = np.matmul(demeaned_pts3D.transpose(), demeaned_pts3D)
         [_, v] = LA.linalg.eigh(_MtM)
         plane3[0:3] = v[:, 0]
         plane3[3] = -np.dot(plane3[0:3], centroid[:])
-        if (plane3[2] > 0):
-            plane3 = -plane3
+        if (abs(plane3[3]) > abs(plane3[2])):  # use d as criterion
+            if (plane3[3] < 0):
+                plane3 = -plane3
+        elif (plane3[2] > 0):   # use c as criterion
+                plane3 = -plane3
         return plane3
 
-    def smoothing(self, img, filtersize=3):
+    def smoothing(self, img, filtersize):
         img = cv2.GaussianBlur(img, (filtersize, filtersize), cv2.BORDER_CONSTANT)
         return img
 
     def visualizePlaneImage(self, plane_img):
-        vis_plane_img_a = np.zeros(shape=(plane_img.shape[0], plane_img.shape[1], 3), dtype=np.uint8)
-        vis_plane_img_b = np.zeros(shape=(plane_img.shape[0], plane_img.shape[1], 3), dtype=np.uint8)
+        #imageio.imwrite('0002.tiff', plane_img)
+        #cv2.namedWindow("planeImage", cv2.WINDOW_NORMAL)
         vis_plane_img_c = np.zeros(shape=(plane_img.shape[0], plane_img.shape[1], 3), dtype=np.uint8)
-        vis_planes_img_d = np.zeros(shape=(plane_img.shape[0], plane_img.shape[1], 3), dtype=np.uint8)
         for y in range(0, plane_img.shape[0]):
             for x in range(0, plane_img.shape[1]):
                 vis_plane_img_c[y, x, :] = plane_img[y, x, 2] * 255
-        cv2.imshow("c", vis_plane_img_c)
-        cv2.imshow("planeImage", abs(plane_img[:,:,0:3]))
-        cv2.imshow("abs_planeImage", plane_img[:,:, 0:3])
+        cv2.imshow("c channel", vis_plane_img_c)
+        cv2.imshow("abs_planeImage", abs(plane_img[:, :, 0:3]))
+        cv2.imshow("ori_planeImage", plane_img[:, :, 0:3])
         cv2.waitKey()
-
-    def visualizePointCloud(self, rgbpath):
-        depthImage = self.depthImage
-        depth_img = self.bitShiftDepthMap(depthImage)
-        [_, points3d] = self.depthImage2ptcloud(depth_img)
-        im = np.asarray(Image.open(rgbpath))
-        rgb = im.astype(np.double) / np.iinfo(im.dtype).max
-        rgb = rgb.reshape(-1, 3)
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.scatter(points3d[:, 0], points3d[:, 1], points3d[:, 2], c=rgb)
-        plt.show()
-
-
-def download_trained_weights(model_name, model_path, verbose=1):
-    """
-    Download trained weights from previous training on depth images or rgbd images.
-    """
-    # depth_model_path: local path of depth trained weights
-    
-    if verbose > 0:
-        print("Downloading pretrained model to " + model_path + " ...")
-    if model_name == 'depth':
-        with contextlib.closing(request.urlopen(DEPTH_TRAINED_MODEL)) as resp, open(model_path, 'wb') as out:
-            shutil.copyfileobj(resp, out)
-    elif model_name == 'rgbd':
-        with contextlib.closing(request.urlopen(REDNET_PRETRAINED_MODEL)) as resp, open(model_path, 'wb') as out:
-            shutil.copyfileobj(resp, out)
-    if verbose > 0:
-        print("... done downloading pretrained model!")
-            
-
 
 class CrossEntropyLoss2d(nn.Module):
     def __init__(self, weight=med_frq):

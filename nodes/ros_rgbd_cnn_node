@@ -19,23 +19,22 @@ import torch.optim
 
 import sys
 sys.path.append('../src/')
-from ros_rgbd_cnn import RedNet_model_depth
-from ros_rgbd_cnn import RedNet_model
+from ros_rgbd_cnn import model_rgbd
 from ros_rgbd_cnn import utils
 from ros_rgbd_cnn.utils import load_ckpt
 
 import skimage.io
 import glob
 from planenet import PlaneNet
-from rednet import RedNet
+from rgbdnet import RGBDNet
 
 def main():
     rospy.init_node('ros_rgbd_cnn_node')
 
-    algorithm = rospy.get_param('~algorithm', 'rednet')     
+    algorithm = rospy.get_param('~algorithm', 'rgbdnet')     
 
-    if (algorithm == 'rednet'):
-        node = RedNet()
+    if (algorithm == 'rgbdnet'):
+        node = RGBDNet()
     elif (algorithm == 'planenet'):
         node = PlaneNet()
 

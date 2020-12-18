@@ -3,12 +3,12 @@
         <remap from="~rgb" to="/camera/rgb/image_color" />
         <remap from="~depth" to="/camera/depth/image" />
         <remap from="~depth/camera_info" to="/camera/depth/camera_info" />
-        <param name="~model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_rednet_rgbd_pretrained.pth" />
-        <!--<param name="~rgbd_model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_rednet_rgbd_pretrained.pth" />
-        <param name="~rgbplane_model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_epoch_10.00_rgbplane.pth" />-->
+        <param name="~algorithm" value="planenet" />
+        <param name="~model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_epoch_150.00_rgbplane.pth" />
+        <!-- <param name="~algorithm" value="rgbdnet" />
+        <param name="~model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_rednet_rgbd_pretrained.pth" />  -->
         <param name="~result" value="true" />
         <param name="~segimg" value="true" />
-        <param name="~algorithm" value="planenet" />
     </node>
 
     <node name="bag" pkg="rosbag" type="play"
