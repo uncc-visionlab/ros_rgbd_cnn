@@ -6,7 +6,7 @@
         <param name="~algorithm" value="planenet" />
         <param name="~model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_epoch_150.00_rgbplane.pth" />
         <!-- <param name="~algorithm" value="rgbdnet" />
-        <param name="~model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_rednet_rgbd_pretrained.pth" />  -->
+        <param name="~model_path" value="$(find ros_rgbd_cnn)/weights/ckpt_rgbd_pretrained.pth" />  -->
         <param name="~result" value="true" />
         <param name="~segimg" value="true" />
     </node>
