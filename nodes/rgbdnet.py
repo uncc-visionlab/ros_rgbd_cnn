@@ -26,6 +26,7 @@ from ros_rgbd_cnn.utils import load_ckpt
 
 import skimage.io
 import glob
+from time import time
 
 from ros_rgbd_cnn_core import RGBD_CNN_Core
 from ros_rgbd_cnn.msg import Result
@@ -80,7 +81,11 @@ class RGBDNet(RGBD_CNN_Core):
                 continue
 
             if msg is not None:
+                start_time = time()
                 self._segment_image(msg)
+                end_time = time()
+                print("RGBD segmentation time " + str(end_time-start_time) + "s, " + str(1/(end_time-start_time)) + "fps")
+                # or use "rostopic hz /segimg"
 
             rate.sleep()
 

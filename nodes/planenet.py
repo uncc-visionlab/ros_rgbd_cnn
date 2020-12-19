@@ -28,6 +28,7 @@ from ros_rgbd_cnn.utils import depth2plane
 import skimage.io
 import glob
 from scipy import signal
+from time import time
 
 from ros_rgbd_cnn_core import RGBD_CNN_Core
 from ros_rgbd_cnn.msg import Result
@@ -90,13 +91,19 @@ class PlaneNet(RGBD_CNN_Core):
             if msg is not None:
                 #plane_img = self._estimate_planes(msg)
                 depth = msg._depth
+                start_time = time()
                 self.extrinsic = np.array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])      # extrinsic from camera_info_msg is different from what we expect
                 plane = depth2plane(depth, self.extrinsic, self.intrinsic, fittingSize)
                 plane_img = plane.getPlaneImage()
+                end_time = time()
+                print("Plane fitting time " + str(end_time-start_time) + "s, " + str(1/(end_time-start_time)) + "fps")
                 plane_img_msg = self._visualizePlaneImage(plane_img)
                 self._planeimg_pub.publish(plane_img_msg)
                 plane_seg = plane_img[:, :, [1,2,3]]
+                start_time = time()
                 self._segment_image(msg, plane_seg)
+                end_time = time()
+                print("RGBPlane time " + str(end_time-start_time) + "s, " + str(1/(end_time-start_time)) + "fps")
 
             rate.sleep()
             
