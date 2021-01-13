@@ -46,10 +46,10 @@ class RGBD_CNN_Core(object):
         camera_info_msg = rospy.wait_for_message('~depth/camera_info', CameraInfo, timeout=None)
         self.intrinsic = np.array(camera_info_msg.K)
         self.extrinsic = np.array(camera_info_msg.P)
-        #self._ifocal_length_x = 1.0/camera_info_msg.K[0]
-        #self._ifocal_length_y = 1.0/camera_info_msg.K[4]
-        #self._center_x = camera_info_msg.K[2]
-        #self._center_y = camera_info_msg.K[5]
+        self._ifocal_length_x = 1.0/camera_info_msg.K[0]
+        self._ifocal_length_y = 1.0/camera_info_msg.K[4]
+        self._center_x = camera_info_msg.K[2]
+        self._center_y = camera_info_msg.K[5]
         print("Received CameraInfo message.")
 
     def _sync_callback(self, ros_rgb_img, ros_depth_img):
@@ -61,3 +61,4 @@ class RGBD_CNN_Core(object):
             self._last_msg._rgb = self._cv_bridge.imgmsg_to_cv2(ros_rgb_img, 'bgr8')  # 32FC1 for depth images, bgr8 for color images
             self._last_msg._depth = self._cv_bridge.imgmsg_to_cv2(ros_depth_img, '32FC1')  # 32FC1 for depth images, bgr8 for color images
             self._msg_lock.release()
+

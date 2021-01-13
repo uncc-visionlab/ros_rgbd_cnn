@@ -5,6 +5,9 @@ import threading
 import numpy as np
 
 import cv2
+
+import cv_uncc
+
 from cv_bridge import CvBridge
 import rospy
 import message_filters
@@ -19,16 +22,18 @@ import torchvision
 import torch.optim
 
 import sys
+from time import time
 sys.path.append('../src/')
 from ros_rgbd_cnn import model_rgbplane
 from ros_rgbd_cnn import utils
+from ros_rgbd_cnn import rgbd_planefitting
+from ros_rgbd_cnn.rgbd_planefitting import rgbdFastFitting
 from ros_rgbd_cnn.utils import load_ckpt
 from ros_rgbd_cnn.utils import depth2plane
 
 import skimage.io
 import glob
 from scipy import signal
-from time import time
 
 from ros_rgbd_cnn_core import RGBD_CNN_Core
 from ros_rgbd_cnn.msg import Result
@@ -41,7 +46,7 @@ CLASS_NAMES =  ['wall', 'floor', 'cabinet', 'bed', 'chair', 'sofa', 'table', 'do
 
 # Local path to trained weights file
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu");
+#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu");
 device = torch.device("cpu")
 if device.type == 'cuda':
     print('Using '+ torch.cuda.get_device_name(0))
@@ -78,6 +83,8 @@ class PlaneNet(RGBD_CNN_Core):
         ts = message_filters.ApproximateTimeSynchronizer([rgb_sub, depth_sub], 10, 0.1, allow_headerless=True)
         ts.registerCallback(self._sync_callback)
 
+        #rgbd_plane = rgbdFastFitting(self.intrinsic, self.extrinsic, 480, 640, 5, 5)
+        
         rate = rospy.Rate(self._publish_rate)
         while not rospy.is_shutdown():
             if self._msg_lock.acquire(False):
@@ -89,24 +96,33 @@ class PlaneNet(RGBD_CNN_Core):
                 continue
 
             if msg is not None:
-                #plane_img = self._estimate_planes(msg)
                 depth = msg._depth
-                start_time = time()
-                self.extrinsic = np.array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0])      # extrinsic from camera_info_msg is different from what we expect
-                plane = depth2plane(depth, self.extrinsic, self.intrinsic, fittingSize)
-                plane_img = plane.getPlaneImage()
-                end_time = time()
-                print("Plane fitting time " + str(end_time-start_time) + "s, " + str(1/(end_time-start_time)) + "fps")
-                plane_img_msg = self._visualizePlaneImage(plane_img)
-                self._planeimg_pub.publish(plane_img_msg)
-                plane_seg = plane_img[:, :, [1,2,3]]
-                start_time = time()
-                self._segment_image(msg, plane_seg)
-                end_time = time()
-                print("RGBPlane time " + str(end_time-start_time) + "s, " + str(1/(end_time-start_time)) + "fps")
+                start = time()
+                rgbd = cv_uncc.rgbd.RgbdImage(msg._rgb, msg._depth, self._center_x, self._center_y, 1.0/self._ifocal_length_y);
+                #rgbd.computeNormals()
+                #normals_img = rgbd.getNormals()
+                rgbd.computePlanes()
+                planes_img = rgbd.getPlanes()
+                stop = time()
+                #cv2.imwrite('normals.jpg', abs(255*planes_img[:,:,0:3]))
+                #print(planes_img[0, 5])
+                #print(normals_img[0, 0])
+                #print("normals shape = " + str(normals_img.shape))
+                print("required %s ms to complete" % str(1000*(stop-start)))
+                self._planeimg_pub.publish(self._cv_bridge.cv2_to_imgmsg(abs(planes_img[:,:,2])*255, encoding="passthrough"))
+                self._segment_image(msg, planes_img)
 
             rate.sleep()
             
+    def _visualizeNormalsImage(self, plane_img):
+        vis_planes_img = np.zeros(shape=(plane_img.shape[0], plane_img.shape[1], 3), dtype=np.uint8);
+        for y in xrange(0, plane_img.shape[0], 1):
+            for x in xrange(0, plane_img.shape[1], 1):
+                if (~np.isnan(plane_img[y,x,2])):
+                    vis_planes_img[y, x, :] = plane_img[y, x, 2]*255
+        image_msg = self._cv_bridge.cv2_to_imgmsg(vis_planes_img, encoding="bgr8")
+        return image_msg
+
     def _visualizePlaneImage(self, plane_img):
         vis_planes_img = np.zeros(shape=(plane_img.shape[0], plane_img.shape[1], 3), dtype=np.uint8);
         for y in xrange(0, plane_img.shape[0], 1):
@@ -116,8 +132,9 @@ class PlaneNet(RGBD_CNN_Core):
         image_msg = self._cv_bridge.cv2_to_imgmsg(vis_planes_img, encoding="bgr8")
         return image_msg
   
-    def _segment_image(self, msg, plane_img):
+    def _segment_image(self, msg, planes_img):
         rgb_img = msg._rgb
+        plane_img = planes_img[:,:,[0,1,3]]
         #depth_img = msg._depth
         #depth_img = np.nan_to_num(depth_img)
         #depth_img = depth_img*10000
@@ -127,6 +144,9 @@ class PlaneNet(RGBD_CNN_Core):
         #print("depth_(min,max): " + str(depth_img[...].min()) + "," + str(depth_img[...].max()))
         # Run detection
         # Bi-linear
+        #image = rgb_img
+        #plane = plane_img
+        start = time()
         image = skimage.transform.resize(rgb_img, (image_h, image_w), order=1,
                                      mode='reflect', preserve_range=True)
         #depth = skimage.transform.resize(depth_img, (image_h, image_w), order=0,
@@ -134,7 +154,6 @@ class PlaneNet(RGBD_CNN_Core):
         plane = skimage.transform.resize(plane_img, (image_h, image_w), order=1,
                                      mode='reflect', preserve_range=True)
         
-        #plane goes here. Need to be resized to (image_h, image_w)                     
         image = image / 255
         image = torch.from_numpy(image).float()
         #depth = torch.from_numpy(depth).float()
@@ -153,6 +172,8 @@ class PlaneNet(RGBD_CNN_Core):
         image = image.to(device).unsqueeze_(0)
         #depth = depth.to(device).unsqueeze_(0)
         plane = plane.to(device).unsqueeze_(0)
+        stop = time()
+        print("preprocessing time is " + str(stop-start))
         result = self._model(image, plane)
 
         color_label = utils.color_label(torch.max(result, 1)[1] + 1)[0]
@@ -190,3 +211,4 @@ class PlaneNet(RGBD_CNN_Core):
     
 if __name__ == '__main__':
     main()
+

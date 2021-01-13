@@ -38,7 +38,7 @@ CLASS_NAMES =  ['wall', 'floor', 'cabinet', 'bed', 'chair', 'sofa', 'table', 'do
     'person', 'night_stand', 'toilet', 'sink', 'lamp', 'bathtub', 'bag']
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu");
-device = torch.device("cpu")
+#device = torch.device("cpu")
 if device.type == 'cuda':
     print('Using '+ torch.cuda.get_device_name(0))
 
