@@ -1,8 +1,17 @@
-
-#include "planenet.hpp"
+#include <ros_rgbd_cnn/planenet.hpp>
 
 #define image_w 160
 #define image_h 128
+
+PlaneNet::PlaneNet() : model_loaded(false) {
+}
+
+PlaneNet::~PlaneNet() {
+}
+
+PlaneNet::Ptr PlaneNet::create() {
+    return PlaneNet::Ptr(boost::make_shared<PlaneNet>());
+}
 
 void PlaneNet::loadModel(std::string modelfilepath) {
     // Deserialize the ScriptModule from a file using torch::jit::load().

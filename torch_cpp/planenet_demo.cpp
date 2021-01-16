@@ -2,7 +2,7 @@
 #include <iostream>
 #include <memory>
 
-#include "planenet.hpp"
+#include <ros_rgbd_cnn/planenet.hpp>
 
 cv::Mat ReadMatFromTxt(std::string filename, int rows, int cols, int channel = 0, int type = CV_32F)
 {

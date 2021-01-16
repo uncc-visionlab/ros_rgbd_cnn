@@ -13,7 +13,7 @@ find_package(Torch REQUIRED)
 find_package(OpenCV REQUIRED)
 #list(APPEND TORCH_LIBRARIES libtorch/lib)
 #set(TORCH_LIBRARIES torch)
-include_directories(SYSTEM ${TORCH_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
+include_directories(SYSTEM ../include ${TORCH_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
 add_library(planenet SHARED planenet.cpp)
 target_link_libraries(planenet "${TORCH_LIBRARIES}" "${OpenCV_LIBRARIES}")
