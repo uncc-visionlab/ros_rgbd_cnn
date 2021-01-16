@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(ros_rgbd_cnn)
+set(CMAKE_VERBOSE_MAKEFILE TRUE)
+add_subdirectory(torch_cpp)
 
 find_package(catkin REQUIRED COMPONENTS std_msgs sensor_msgs message_generation)
 
@@ -37,7 +39,6 @@ install(DIRECTORY
 #############
 ## Testing ##
 #############
-
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
