@@ -63,8 +63,8 @@ int main() {
     cv::Mat plane = ReadMatFromTxt(_PLANE_FILENAME, 106, 140, 3, CV_32FC3);
 
     cv::Mat resize_rgb, resize_plane, rgb_norm;
-    cv::resize(rgb, resize_rgb, cv::Size(image_h, image_w), cv::INTER_LINEAR);
-    cv::resize(plane, resize_plane, cv::Size(image_h, image_w), cv::INTER_NEAREST);
+    cv::resize(rgb, resize_rgb, cv::Size(image_w, image_h), cv::INTER_LINEAR);
+    cv::resize(plane, resize_plane, cv::Size(image_w, image_h), cv::INTER_NEAREST);
     resize_rgb.convertTo(rgb_norm, CV_32F, 1.0/255, 0); 
     torch::Tensor rgb_tensor = torch::from_blob(rgb_norm.data, {image_h, image_w, 3}, torch::kFloat);
     torch::Tensor plane_tensor = torch::from_blob(resize_plane.data, {image_h, image_w, 3}, torch::kFloat);
