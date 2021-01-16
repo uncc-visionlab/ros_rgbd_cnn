@@ -20,7 +20,7 @@ class PyTorchPlaneClassifier {
 public:
     typedef boost::shared_ptr<PyTorchPlaneClassifier> Ptr;
     virtual void loadModel(std::string modelfilepath) = 0;
-    virtual cv::Mat eval(cv::Mat& rgb, cv::Mat& plane) = 0;
+    virtual cv::Mat eval(const cv::Mat& rgb, const cv::Mat& plane) = 0;
 };
 
 class PlaneNet : public PyTorchPlaneClassifier {
@@ -34,7 +34,7 @@ public:
     
     void loadModel(std::string modelfilepath);
 
-    cv::Mat eval(cv::Mat& rgb, cv::Mat& plane);
+    cv::Mat eval(const cv::Mat& rgb, const cv::Mat& plane);
 
     static PlaneNet::Ptr create();
 };

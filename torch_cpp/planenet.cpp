@@ -19,7 +19,7 @@ void PlaneNet::loadModel(std::string modelfilepath) {
     model_loaded = true;
 }
 
-cv::Mat PlaneNet::eval(cv::Mat& rgb, cv::Mat& plane) {
+cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
     if (!model_loaded) {
         std::cout << "Error Torch model is not loaded!" << std::endl;
     }
