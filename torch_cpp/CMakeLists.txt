@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0 FATAL_ERROR)
-project(libtorch_cpp_cnn_inference)
+project(planenet_cpp)
 
 set(LIBTORCH_LOCAL_FOLDER /home/arwillis/bin/libtorch)
 
@@ -15,9 +15,10 @@ find_package(OpenCV REQUIRED)
 #set(TORCH_LIBRARIES torch)
 include_directories(SYSTEM ${TORCH_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
-add_executable(libtorch_cpp_cnn_inference example-app.cpp)
-#link_directories(/usr/lib/x86_64-linux-gnu)
-#link_directories(${LIBTORCH_LOCAL_FOLDER}/lib)
-#set(CUDA_cublas_LIBRARY /usr/lib/x86_64-linux-gnu/libcublas.so)
-target_link_libraries(libtorch_cpp_cnn_inference "${TORCH_LIBRARIES}" "${OpenCV_LIBRARIES}")
-set_property(TARGET libtorch_cpp_cnn_inference PROPERTY CXX_STANDARD 14)
+add_library(planenet SHARED planenet.cpp)
+target_link_libraries(planenet "${TORCH_LIBRARIES}" "${OpenCV_LIBRARIES}")
+set_property(TARGET planenet PROPERTY CXX_STANDARD 14)
+
+add_executable(planenet_demo planenet_demo.cpp)
+target_link_libraries(planenet_demo planenet "${TORCH_LIBRARIES}" "${OpenCV_LIBRARIES}")
+set_property(TARGET planenet_demo PROPERTY CXX_STANDARD 14)
