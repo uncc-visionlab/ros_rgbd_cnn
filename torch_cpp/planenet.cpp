@@ -23,9 +23,14 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
     if (!model_loaded) {
         std::cout << "Error Torch model is not loaded!" << std::endl;
     }
+    cv::Mat abcd[4];
+    cv::split(plane, abcd);
+    std::vector<cv::Mat> bcd = {abcd[1],abcd[2],abcd[3]}; 
+    cv::Mat plane3(abcd[0].rows, abcd[0].cols, CV_32FC3);
+    cv::merge(bcd, plane3); // y, z, d channels of plane image
     cv::Mat resize_rgb, resize_plane, rgb_norm;
     cv::resize(rgb, resize_rgb, cv::Size(image_w, image_h), cv::INTER_LINEAR);
-    cv::resize(plane, resize_plane, cv::Size(image_w, image_h), cv::INTER_NEAREST);
+    cv::resize(plane3, resize_plane, cv::Size(image_w, image_h), cv::INTER_NEAREST);
     resize_rgb.convertTo(rgb_norm, CV_32F, 1.0 / 255, 0);
     torch::Tensor rgb_tensor = torch::from_blob(rgb_norm.data,{image_h, image_w, 3}, torch::kFloat);
     torch::Tensor plane_tensor = torch::from_blob(resize_plane.data,{image_h, image_w, 3}, torch::kFloat);
