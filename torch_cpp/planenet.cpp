@@ -1,4 +1,5 @@
 #include <ros_rgbd_cnn/planenet.hpp>
+#include <fstream>
 
 #define image_w 160
 #define image_h 128
@@ -58,12 +59,11 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
     //torch::Tensor result = torch::max(output, 1)
 
     torch::Tensor label_data = std::get<1>(result) + 1; // 1*image_w*image_h
-    label_data = label_data.squeeze().detach(); // image_w*image_h
-    label_data = label_data.contiguous();
-
-    //label_data = label_data.to(torch::kCPU);
-    cv::Mat label(image_h, image_w, CV_8UC1);
-    std::memcpy((void *) label.data, label_data.data_ptr(), sizeof (torch::kU8) * label_data.numel());
+    label_data = label_data.squeeze().detach().to(torch::kU8); // image_w*image_h
+    label_data = label_data.to(torch::kCPU);
+    
+    cv::Mat label(image_h, image_w, CV_8UC1);  // Mat(int rows, int cols, int type)
+    std::memcpy((void *) label.data, label_data.data_ptr(), sizeof(torch::kU8)*label_data.numel());
     return label;
 }
 

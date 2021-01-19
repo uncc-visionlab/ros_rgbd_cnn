@@ -45,6 +45,12 @@ cv::Mat ReadMatFromTxt(std::string filename, int rows, int cols, int channel = 0
     }
 }
 
+void writeCSV(std::string fileName, cv::Mat m) {
+    std::ofstream myfile;
+    myfile.open(fileName.c_str());
+    myfile << cv::format(m, cv::Formatter::FMT_CSV) << std::endl;
+    myfile.close();
+}
 
 int main() {
 		
@@ -62,6 +68,8 @@ int main() {
     cv::Mat labels = planenet.eval(rgb, plane);
 
     std::cout << labels.at<int>(20,70) << "\n";
+    std::string fileName = "label.csv";
+    //writeCSV(fileName, labels);
     //std::cout << label_data << "\n";
     return 0;
 }
