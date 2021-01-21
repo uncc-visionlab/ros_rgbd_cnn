@@ -55,15 +55,27 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
 
     // Execute the model and turn its output into a tensor.
     auto output = model.forward(inputs).toTuple()->elements()[0].toTensor(); // Now works on CPU. Need to convert to GPU if required 
-    std::tuple<at::Tensor, at::Tensor> result = torch::max(output, 1);
+    auto output_softmax = torch::softmax(output, 1);
+    std::tuple<at::Tensor, at::Tensor> result = torch::max(output_softmax, 1);
     //torch::Tensor result = torch::max(output, 1)
 
     torch::Tensor label_data = std::get<1>(result) + 1; // 1*image_w*image_h
-    label_data = label_data.squeeze().detach().to(torch::kU8); // image_w*image_h
+    torch::Tensor label_prob = std::get<0>(result);
+    label_data = label_data.squeeze().detach().to(torch::kF32);; // image_w*image_h
     label_data = label_data.to(torch::kCPU);
+    label_prob = label_prob.squeeze().detach().to(torch::kF32);; // image_w*image_h
+    label_prob = label_prob.to(torch::kCPU);
     
-    cv::Mat label(image_h, image_w, CV_8UC1);  // Mat(int rows, int cols, int type)
-    std::memcpy((void *) label.data, label_data.data_ptr(), sizeof(torch::kU8)*label_data.numel());
+    cv::Mat labelData(image_h, image_w, CV_32FC1);  // Mat(int rows, int cols, int type)
+    cv::Mat labelProb(image_h, image_w, CV_32FC1);
+    std::memcpy((void *) labelData.data, label_data.data_ptr(), torch::elementSize(torch::kF32)*label_data.numel());
+    std::memcpy((void *) labelProb.data, label_prob.data_ptr(), torch::elementSize(torch::kF32)*label_prob.numel());
+    //std::cout << label.size() << "\n";  // returns cv:::Size(cols, rows)
+    //torch::Tensor label_data_cpu = label_data.cpu();
+    //cv::Mat label(image_h, image_w, CV_8UC1, label_data_cpu.data_ptr<long>());
+    std::vector<cv::Mat> labelVec = {labelData,labelProb}; 
+    cv::Mat label(labelData.rows, labelData.cols, CV_32FC2);
+    cv::merge(labelVec, label);
     return label;
 }
 

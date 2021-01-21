@@ -67,10 +67,9 @@ int main() {
     planenet.loadModel(_MODEL_JIT_FILENAME);
     cv::Mat labels = planenet.eval(rgb, plane);
 
-    std::cout << labels.at<int>(20,70) << "\n";
-    std::string fileName = "label.csv";
+    std::cout << labels.at<cv::Vec2f>(20,70) << "\n";
+    //std::string fileName = "label.csv";
     //writeCSV(fileName, labels);
-    //std::cout << label_data << "\n";
     return 0;
 }
 
