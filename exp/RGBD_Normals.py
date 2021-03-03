@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from PIL import Image
 import cv_uncc
 import numpy as np
@@ -61,8 +62,7 @@ def LineToPointDistance(P1,P2,C):
     return r, P
 
 
-def computeNormals(dims, K, GEOMETRY, NOISE_TYPE, noisemag):
-    
+def compute3DProjectionImage(dims, K):
     dx = np.zeros((1, dims[1]))
     dy = np.zeros((1, dims[0]))
     for x  in range(dims[1]):
@@ -72,11 +72,16 @@ def computeNormals(dims, K, GEOMETRY, NOISE_TYPE, noisemag):
     Ix = np.matmul(np.ones((dims[0], 1)), dx)
     Iy = np.matmul(dy.transpose(), np.ones((1, dims[1])))
     Iz = np.ones((dims[0], dims[1]))
+    return Ix, Iy, Iz
 
+
+def generateSyntheticDepth(dims, K, GEOMETRY):
+    
+    Ix, Iy, Iz = compute3DProjectionImage(dims, K)
     C = np.array([0, 0, 3]).reshape(3, 1)
     r = 1
     P1 = np.array([0, 0, 0]).reshape(3, 1)
-    planecoeffs = np.array([0, 3, -2, 6]).reshape(4, 1)  # np.array([0, 1, -1, 2]).reshape(4, 1)
+    planecoeffs = np.array([-2, 0, -2, 5]).reshape(4, 1)  # np.array([0, 1, -1, 2]).reshape(4, 1)
     planecoeffs = planecoeffs/np.linalg.norm(planecoeffs[0:3])
     #print(planecoeffs)
     depth = np.zeros((dims[0], dims[1]), np.float32) 
@@ -113,24 +118,33 @@ def computeNormals(dims, K, GEOMETRY, NOISE_TYPE, noisemag):
                 else:
                     normals[row,col,:] = (planecoeffs[0:3]/np.linalg.norm(planecoeffs[0:3])).squeeze()
                 normalsIdx.append([row, col])
-            # noise constant from
-            # Khoshelham, K.; Elberink, S.O. Accuracy and Resolution of Kinect Depth Data for Indoor Mapping Applications. Sensors 2012, 12, 1437-1454. https://doi.org/10.3390/s12020143            
-            if (NOISE_TYPE == 1):
-                depth[row, col] = depth[row, col] + np.random.normal(0, noisemag[row]*depth[row,col] ** 2, 1)
-            elif (NOISE_TYPE == 2): None
-            elif (NOISE_TYPE == 0): None
-            else:
-                print("Invalid NOISE_TYPE argument!")
+    return rgb, depth, normals, normalsIdx            
+                
+                
+def addNoise(depth, NOISE_TYPE, noiseStdFactor):
+    # noise constant from
+    # Khoshelham, K.; Elberink, S.O. Accuracy and Resolution of Kinect Depth Data for Indoor Mapping Applications. Sensors 2012, 12, 1437-1454. https://doi.org/10.3390/s12020143            
+    if (NOISE_TYPE == 1):
+        noisemag = 0.001425
+        err = np.random.normal(0, noisemag * noiseStdFactor * np.power(depth, 2), size=(depth.shape[0], depth.shape[1]))
+        depth = depth + err
+    elif (NOISE_TYPE == 2): None
+    elif (NOISE_TYPE == 0): None
+    else:
+        print("Invalid NOISE_TYPE argument!")
+    return depth, err
 
-    #xyzPoints = depth.flatten('F') * np.array([Ix.flatten('F'), Iy.flatten('F'), Iz.flatten('F')]) # [height*width, 3]
-    #color = rgb.astype(np.double) / np.max(rgb)
-    #color = color.reshape(-1, 3)
-    #points3D = xyzPoints.transpose()
-    #fig = plt.figure()
-    #ax = fig.add_subplot(111, projection='3d')
-    #ax.scatter(points3D[:, 0], points3D[:, 1], points3D[:, 2], c=color, s=0.01)
-    #plt.show()
-    return rgb, depth, normals, normalsIdx
+
+def plotPointCloud(dims, K, depth):
+    Ix, Iy, Iz = compute3DProjectionImage(dims, K)
+    xyzPoints = depth.flatten('F') * np.array([Ix.flatten('F'), Iy.flatten('F'), Iz.flatten('F')]) # [height*width, 3]
+    color = rgb.astype(np.double) / np.max(rgb)
+    color = color.reshape(-1, 3)
+    points3D = xyzPoints.transpose()
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(points3D[:, 0], points3D[:, 1], points3D[:, 2], c=color, s=0.01)
+    plt.show()
 
 
 if __name__ == "__main__":
@@ -143,106 +157,112 @@ if __name__ == "__main__":
     # NOISE_TYPE = 1 --> NOISE IS IN THE DIRECTION OF THE DEPTH MEASUREMENT
     # NOISE_TYPE = 2 --> NOISE IS IN THE DIRECTION OF THE SURFACE NORMAL
     
-    accuracyTest = 1
-    accuracyVSdepthTest = 0
+    accuracyTest = 0
+    accuracyVSdepthTest = 1
     timeTest = 0
     CSVheader = ([" ", "Explicit", "Implicit", "SRI", "FALS"]) 
     if (accuracyTest):
-        with open('err results.csv', 'w') as file:
+        with open('err_results.csv', 'w') as file:
             writer = csv.writer(file) 
             writer.writerow(CSVheader)
-        with open('std results.csv', 'w') as file:
-            writer = csv.writer(file) 
-            writer.writerow(CSVheader)
+        #with open('std_results.csv', 'w') as file:
+        #    writer = csv.writer(file) 
+        #    writer.writerow(CSVheader)
     elif (accuracyVSdepthTest):
         headerWriterCnt = 1;    # only write header once 
-        with open('deptherr results.csv', 'w') as file:
+        with open('deptherr_results.csv', 'w') as file:
             None
     elif (timeTest):
-        with open('time results.csv', 'w') as file:
+        with open('time_results.csv', 'w') as file:
             writer = csv.writer(file)
             writer.writerow(CSVheader)
            
     noiseType = 1
-    for GEOMETRY in [1]:
-        for SCALE in [1]: #np.arange(0.2, 1.05, 0.05):
-            for noisefactor in np.arange(0, 3.1, 0.1):                                  
-                dims = np.array((480/SCALE, 640/SCALE), np.int)
-                K = np.array([567.84/SCALE, 0, (dims[1]-1)/2.0, 0, 567.84/SCALE, (dims[0]-1)/2.0, 0, 0, 1], dtype=float)                
-                K = K.reshape(3, 3)                
-                windowSize = (5, 5)
-                noisemag = np.full(dims[0], 0.001425) * noisefactor    #  generate noise along the depth 
-                if(accuracyVSdepthTest and GEOMETRY==2):
-                    noisemag = np.multiply(np.linspace(1, 2, num=dims[0]), noisemag).transpose()  #  generate noise along the depth (depth increases top-down)
-                rgb, depth, normals, normalsIdx = computeNormals(dims, K, GEOMETRY, noiseType, noisemag)
-                #plt.imsave("depth.png", depth, cmap='Greys')
-                #cv2.imwrite("rgb.jpg", rgb)                
-                rgbd = cv_uncc.rgbd.RgbdImage(rgb, depth, K[0, 2], K[1, 2], K[0, 0])
-                rgbd.initializeIntegralImages(windowSize)
-                #rgbd = cv_uncc.rgbd.RgbdImage(rgb, depth, self._center_x, self._center_y, 1.0/self._ifocal_length_y);
-                
-                errArr = []
-                stdArr = []
-                errdepthArr = []
-                durationArr = []
-                for method in range(5):
-                    err = 0
-                    std = 0
-                    errdepth = 0
-                    duration = 0
-                    if method == 2:  #  lineMod not working
-                        None
-                    else:
-                        for i in range(10):
-                            duration += rgbd.computeNormals(method)
-                            normalsImg = rgbd.getNormals()                                                            
-                            errImg = np.zeros([dims[0], dims[1], 3])
-                            validCnt = 0
-                            for coor in normalsIdx:
-                                row = coor[0]
-                                col = coor[1]
-                                if (np.any(np.isnan(normalsImg[row, col, :])) or np.any(np.isinf(normalsImg[row, col, :]))):
-                                    None
-                                    #print("An invalid value at " + str([row, col]))
-                                else:
-                                    errImg[row, col, :] = abs(normalsImg[row, col, :] - normals[row, col, :]) 
-                                    validCnt += 1   # most of time valiCnt = len(normalsIdx) except ~40 estimates are invalid in planar depth image with SRI method 
-                            std += np.array([np.std(errImg[:,:,0]), np.std(errImg[:,:,1]), np.std(errImg[:,:,2])])
-                            err += np.sum(np.sum(errImg, axis = 0), axis = 0) / validCnt
-                            if (accuracyVSdepthTest == 1 and GEOMETRY == 2):
-                                errImgNorm = np.linalg.norm(errImg, axis=2)
-                                errdepth += np.sum(errImgNorm, axis=1) / np.shape(errImgNorm)[1]
-#                            if (i == 1):
-#                                print("valid pixels in estimated result = " + str(validCnt))
-#                                print("valid pixels in ground truth result = " + str(len(normalsIdx)))                                    
-                        normerr = np.average(err/10)  # np.linalg.norm(err/10)
-                        normstd = np.average(err/10)  # np.linalg.norm(std/10)
-                        errArr.append(normerr)
-                        stdArr.append(normstd)
-                        errdepthArr.append(errdepth/10)
-                        durationArr.append(duration*1000/10)  # ms
-                        
-                if (accuracyTest == 1):
-                    with open('err results.csv', 'a') as file: 
-                        writer = csv.writer(file)
-                        writer.writerow([str(noisefactor), str(errArr[0]), str(errArr[1]), str(errArr[2]), str(errArr[3])])                        
-                    with open('std results.csv', 'a') as file:
-                        writer = csv.writer(file) 
-                        writer.writerow([str(noisefactor), str(stdArr[0]), str(stdArr[1]), str(stdArr[2]), str(stdArr[3])])
-                elif (accuracyVSdepthTest == 1 and GEOMETRY==2):                    
-                    with open('deptherr results.csv', 'a') as file:
-                        writer = csv.writer(file) 
-                        if (headerWriterCnt == 1):
-                            #depthCol = np.zeros((1, dims[1]))
-                            depthCol = np.sum(depth, axis=1) / np.shape(depth)[1]  # depth value along columns
-                            writer.writerow([" ", depthCol])
-                            headerWriterCnt += 1
-                        writer.writerow(["Explicit", errdepthArr[0]]) 
-                        writer.writerow(["Implicit", errdepthArr[1]])
-                        writer.writerow(["SRI", errdepthArr[2]])
-                        writer.writerow(["FALS", errdepthArr[3]])
-                elif (timeTest == 1):
-                    with open('time results.csv', 'a') as file:
-                        writer = csv.writer(file)
-                        writer.writerow([str(dims[1])+"x"+str(dims[0]), str(durationArr[0]), str(durationArr[1]), str(durationArr[2]), str(durationArr[3])])                                                           
+    GEOMETRY = 2
+    for SCALE in [1]: #np.arange(1, 5.2, 0.2):                                 
+        dims = np.array((480*SCALE, 640*SCALE), np.int)
+        K = np.array([567.84*SCALE, 0, (dims[1]-1-SCALE)/2.0, 0, 567.84*SCALE, (dims[0]-1-SCALE)/2.0, 0, 0, 1], dtype=np.float32)    # pixel shifting when scaling            
+        K = K.reshape(3, 3)                
+        windowSize = (5, 5) 
+        rgb, depth, normals, normalsIdx = generateSyntheticDepth(dims, K, GEOMETRY)                
+        for noiseStdFactor in [2]:#np.arange(0, 3.1, 0.1)
+            depth, err = addNoise(depth, noiseType, noiseStdFactor)
+            #plotPointCloud(dims, K, depth)
+            plt.imshow(depth, cmap='gray')
+            plt.show()
+            plt.imshow(err, cmap='gray')
+            plt.show()
+            depth = depth.astype(np.float32)
+            rgbd = cv_uncc.rgbd.RgbdImage(rgb, depth, K[0, 2], K[1, 2], K[0, 0])
+            rgbd.initializeIntegralImages(windowSize)
+            #rgbd = cv_uncc.rgbd.RgbdImage(rgb, depth, self._center_x, self._center_y, 1.0/self._ifocal_length_y);
+
+            errArr = []
+            #stdArr = []
+            errdepthArr = []
+            durationArr = []
+            for method in range(5):
+                err = 0
+                std = 0
+                errdepth = 0
+                duration = 0
+                if method == 2:  #  lineMod not working
+                    None
+                else:
+                    for i in range(1):
+                        duration += rgbd.computeNormals(method)
+                        normalsImg = rgbd.getNormals()                                                            
+                        errImg = np.zeros([dims[0], dims[1], 3])
+                        validCnt = 0
+                        for coor in normalsIdx:
+                            row = coor[0]
+                            col = coor[1]
+                            if (np.any(np.isnan(normalsImg[row, col, :])) or np.any(np.isinf(normalsImg[row, col, :]))):
+                                None
+                                #print("An invalid value at " + str([row, col]))
+                            else:
+                                errImg[row, col, :] = abs(normalsImg[row, col, :] - normals[row, col, :]) 
+                                validCnt += 1   # most of time valiCnt = len(normalsIdx) except ~200 estimates are invalid in planar depth image with SRI method 
+                        #std += np.array([np.std(errImg[:,:,0]), np.std(errImg[:,:,1]), np.std(errImg[:,:,2])])
+                        err += np.sum(np.sum(errImg, axis = 0), axis = 0) / validCnt                        
+                        if (accuracyVSdepthTest == 1 and GEOMETRY == 2):
+                            errImgNorm = np.linalg.norm(errImg, axis=2)
+                            plt.imshow(errImgNorm, cmap='gray')
+                            plt.show()
+                            errdepth += np.sum(errImgNorm, axis=0) / np.shape(errImg)[0]
+                        if (i == 0):
+                            print("valid pixels in estimated result = " + str(validCnt))
+                            print("valid pixels in ground truth result = " + str(len(normalsIdx)))                                    
+                    normerr = np.linalg.norm(err/10)
+                    #normstd = np.linalg.norm(std/10)
+                    errArr.append(normerr)
+                    #stdArr.append(normstd)
+
+                    errdepthArr.append(errdepth/1)
+                    
+                    durationArr.append(duration*1000/10)  # ms
+
+            if (accuracyTest == 1):
+                with open('err_results.csv', 'a') as file: 
+                    writer = csv.writer(file)
+                    writer.writerow([str(noisefactor), str(errArr[0]), str(errArr[1]), str(errArr[2]), str(errArr[3])])                        
+                #with open('std results.csv', 'a') as file:
+                #    writer = csv.writer(file) 
+                #    writer.writerow([str(noisefactor), str(stdArr[0]), str(stdArr[1]), str(stdArr[2]), str(stdArr[3])])
+            elif (accuracyVSdepthTest == 1 and GEOMETRY==2):                    
+                with open('deptherr_results.csv', 'a') as file:
+                    writer = csv.writer(file) 
+                    if (headerWriterCnt == 1):
+                        #depthCol = np.zeros((1, dims[1]))
+                        depthCol = np.sum(depth, axis=0) / np.shape(depth)[0]  # depth value along columns
+                        writer.writerow([" ", depthCol])
+                        headerWriterCnt += 1
+                    writer.writerow(["Explicit", errdepthArr[0]]) 
+                    writer.writerow(["Implicit", errdepthArr[1]])
+                    writer.writerow(["SRI", errdepthArr[2]])
+                    writer.writerow(["FALS", errdepthArr[3]])
+            elif (timeTest == 1):
+                with open('time_results.csv', 'a') as file:
+                    writer = csv.writer(file)
+                    writer.writerow([str(dims[1])+"x"+str(dims[0]), str(durationArr[0]), str(durationArr[1]), str(durationArr[2]), str(durationArr[3])])                                                           
     print("Finished")
