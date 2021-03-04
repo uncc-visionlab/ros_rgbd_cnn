@@ -9,6 +9,7 @@ import imageio
 import scipy.io
 import datetime
 import csv
+import sys
 
 
 def LineIntersectPlane(P1, P2, planecoeffs):
@@ -126,13 +127,17 @@ def addNoise(depth, NOISE_TYPE, noiseStdFactor):
     # Khoshelham, K.; Elberink, S.O. Accuracy and Resolution of Kinect Depth Data for Indoor Mapping Applications. Sensors 2012, 12, 1437-1454. https://doi.org/10.3390/s12020143            
     if (NOISE_TYPE == 1):
         noisemag = 0.001425
-        err = np.random.normal(0, noisemag * noiseStdFactor * np.power(depth, 2), size=(depth.shape[0], depth.shape[1]))
-        depth = depth + err
+        noise =  np.random.normal(0, noisemag * noiseStdFactor * np.power(depth, 2), size=(depth.shape[0], depth.shape[1]))
+#        for row in range(depth.shape[0]):
+#            for col in range(depth.shape[1]):
+#                if (depth[row, col] > 2.5):
+#                    depth[row, col] = depth[row, col] + 0.5
+        depth = depth + noise
     elif (NOISE_TYPE == 2): None
     elif (NOISE_TYPE == 0): None
     else:
         print("Invalid NOISE_TYPE argument!")
-    return depth, err
+    return depth, noise
 
 
 def plotPointCloud(dims, K, depth):
@@ -148,6 +153,29 @@ def plotPointCloud(dims, K, depth):
 
 
 if __name__ == "__main__":
+    
+    if (0):
+        rgb_cmp = imageio.imread("/home/jzhang72/PycharmProjects/PlaneNet/data/SUNRGBD/kv1/NYUdata/NYU0001/image/NYU0001.jpg")
+        depth_cmp = imageio.imread("/home/jzhang72/PycharmProjects/PlaneNet/data/SUNRGBD/kv1/NYUdata/NYU0001/depth_bfx/NYU0001.png")
+        depthVisData = np.asarray(depth_cmp, np.uint16)
+        depthInpaint = np.bitwise_or(np.right_shift(depthVisData, 3), np.left_shift(depthVisData, 16 - 3))
+        depthInpaint = depthInpaint.astype(np.single) / 1000
+        depthInpaint[depthInpaint > 8] = 8
+        rgbd_cmp = cv_uncc.rgbd.RgbdImage(rgb_cmp, depthInpaint, 284.582449, 208.736166, 518.857901);
+        rgbd_cmp.initializeIntegralImages((5,5))
+        #rgbd.computeNormals()
+        #normals_img = rgbd.getNormals()
+        rgbd_cmp.computeNormals()
+        normals_img_cmp = rgbd_cmp.getNormals()
+        rgbd_cmp.computePlanes()
+        planes_img_cmp = rgbd_cmp.getPlanes()
+        #print(planes_img_cmp.dtype)
+        #print(planes_img_cmp.shape)
+        imageio.imwrite('normals.jpg', 255*abs(normals_img_cmp))
+        cv2.imshow('planes', np.floor(255*abs(planes_img_cmp[:,:,0:3])))
+        cv2.waitKey(0)
+        cv2.imshow('normals', np.floor(255*abs(normals_img_cmp)))
+        cv2.waitKey(0)
     
     np.set_printoptions(precision=4, suppress=True)   # array printing precision 
     
@@ -179,24 +207,27 @@ if __name__ == "__main__":
            
     noiseType = 1
     GEOMETRY = 2
-    for SCALE in [1]: #np.arange(1, 5.2, 0.2):                                 
+    for SCALE in [0.5]: #np.arange(1, 5.2, 0.2):                                 
         dims = np.array((480*SCALE, 640*SCALE), np.int)
         K = np.array([567.84*SCALE, 0, (dims[1]-1-SCALE)/2.0, 0, 567.84*SCALE, (dims[0]-1-SCALE)/2.0, 0, 0, 1], dtype=np.float32)    # pixel shifting when scaling            
         K = K.reshape(3, 3)                
         windowSize = (5, 5) 
         rgb, depth, normals, normalsIdx = generateSyntheticDepth(dims, K, GEOMETRY)                
-        for noiseStdFactor in [2]:#np.arange(0, 3.1, 0.1)
-            depth, err = addNoise(depth, noiseType, noiseStdFactor)
+        for noiseStdFactor in [1]:#np.arange(0, 3.1, 0.1)
+            depth, noise = addNoise(depth, noiseType, noiseStdFactor)
             #plotPointCloud(dims, K, depth)
-            plt.imshow(depth, cmap='gray')
-            plt.show()
-            plt.imshow(err, cmap='gray')
-            plt.show()
+            #plt.imshow(depth, cmap='gray')
+            #plt.show()
+            #plt.figure()
+            #plt.imshow(noise, cmap='gray')
+            #plt.show()
             depth = depth.astype(np.float32)
+            #scipy.io.savemat('depth.mat', mdict={'depth':depth})
+            #scipy.io.savemat('noise.mat', mdict={'noise':noise})
             rgbd = cv_uncc.rgbd.RgbdImage(rgb, depth, K[0, 2], K[1, 2], K[0, 0])
             rgbd.initializeIntegralImages(windowSize)
-            #rgbd = cv_uncc.rgbd.RgbdImage(rgb, depth, self._center_x, self._center_y, 1.0/self._ifocal_length_y);
-
+            #rgbd = cv_uncc.rgbd.RgbdImage(rgb, depth, self._center_x, self._center_y, 1.0/self._ifocal_length_y           
+            
             errArr = []
             #stdArr = []
             errdepthArr = []
@@ -211,25 +242,46 @@ if __name__ == "__main__":
                 else:
                     for i in range(1):
                         duration += rgbd.computeNormals(method)
-                        normalsImg = rgbd.getNormals()                                                            
-                        errImg = np.zeros([dims[0], dims[1], 3])
+                        normalsImg = rgbd.getNormals() 
+                        #imageio.imwrite('normals.jpg', np.floor(255*abs(normalsImg)))
+                        #imageio.imwrite('normals_gt.jpg', np.floor(255*abs(normals)))
+                        errImg = np.zeros([dims[0], dims[1]])
                         validCnt = 0
-                        for coor in normalsIdx:
-                            row = coor[0]
-                            col = coor[1]
-                            if (np.any(np.isnan(normalsImg[row, col, :])) or np.any(np.isinf(normalsImg[row, col, :]))):
-                                None
-                                #print("An invalid value at " + str([row, col]))
-                            else:
-                                errImg[row, col, :] = abs(normalsImg[row, col, :] - normals[row, col, :]) 
-                                validCnt += 1   # most of time valiCnt = len(normalsIdx) except ~200 estimates are invalid in planar depth image with SRI method 
+                        #print(normalsImg[200, 300, :])
+                        #print(normals[200, 300, :])
+                        #for coor in normalsIdx:
+                        #    row = coor[0]
+                        #    col = coor[1]
+                        for row in range(depth.shape[0]):
+                            for col in range(depth.shape[1]):
+                                if (np.any(np.isnan(normalsImg[row, col, :])) or np.any(np.isinf(normalsImg[row, col, :]))):
+                                    None
+                                    #print("An invalid value at " + str([row, col]))
+                                else:                              
+                                    errImg[row, col] = np.arccos(np.round(np.dot(normalsImg[row,col,:], normals[row,col,:]), 4))  
+                                    validCnt += 1   # most of time valiCnt = len(normalsIdx) except ~200 estimates are invalid in planar depth image with SRI method 
                         #std += np.array([np.std(errImg[:,:,0]), np.std(errImg[:,:,1]), np.std(errImg[:,:,2])])
-                        err += np.sum(np.sum(errImg, axis = 0), axis = 0) / validCnt                        
+                        err += np.sum(np.sum(errImg, axis = 0), axis = 0) / validCnt
+                        print(errImg[20,20])                
+#                        print(depth[20,20])
+                        print(normalsImg[20, 20])
+#                        print(normals[20, 20])
+#                        print(errImg[-20,-20])
+                        print(depth[-20,-20])
+                        print(normalsImg[-20,-20])
+#                        print(normals[-20,-20])
+                        #plt.figure()
+                        #plt.imshow(errImg, cmap='gray')
+                        #plt.show()
                         if (accuracyVSdepthTest == 1 and GEOMETRY == 2):
-                            errImgNorm = np.linalg.norm(errImg, axis=2)
-                            plt.imshow(errImgNorm, cmap='gray')
-                            plt.show()
-                            errdepth += np.sum(errImgNorm, axis=0) / np.shape(errImg)[0]
+                            #errImgNorm = np.linalg.norm(errImg, axis=2)
+                            #plt.imshow(errImg, cmap='gray')
+                            #plt.show() 
+                            scipy.io.savemat('errImg.mat', mdict={'errImg':errImg})
+                            errdepth += np.sum(errImg, axis=0) / np.shape(errImg)[0]
+                            
+#                            print(errdepth[10])
+#                            print(errdepth[-10])
                         if (i == 0):
                             print("valid pixels in estimated result = " + str(validCnt))
                             print("valid pixels in ground truth result = " + str(len(normalsIdx)))                                    
