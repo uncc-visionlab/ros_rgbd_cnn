@@ -24,6 +24,8 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
     if (!model_loaded) {
         std::cout << "Error Torch model is not loaded!" << std::endl;
     }
+    model.to(at::kCUDA);
+    torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
     cv::Mat abcd[4];
     cv::split(plane, abcd);
     std::vector<cv::Mat> bcd = {abcd[1],abcd[2],abcd[3]}; 
@@ -55,6 +57,8 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
         plane_tensor[2] = plane_tensor[2].sub(5).div(10);
         auto unsqueezed_rgb = rgb_tensor.unsqueeze(0);
         auto unsqueezed_plane = plane_tensor.unsqueeze(0);
+        unsqueezed_rgb = unsqueezed_rgb.to(at::kCUDA);
+        unsqueezed_rgb = unsqueezed_plane.to(at::kCUDA);
 
         // Create a vector of inputs.
         std::vector<torch::jit::IValue> inputs;
@@ -62,7 +66,7 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
         inputs.push_back(unsqueezed_plane);
 
         // Execute the model and turn its output into a tensor.
-        auto output = model.forward(inputs).toTuple()->elements()[0].toTensor(); // Now works on CPU. Need to convert to GPU if required 
+        auto output = model.forward(inputs).toTuple()->elements()[0].toTensor(); 
         auto output_softmax = torch::softmax(output, 1);
         std::tuple<at::Tensor, at::Tensor> result = torch::max(output_softmax, 1);
         //torch::Tensor result = torch::max(output, 1)
@@ -109,11 +113,12 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
         srcImg_tensor[5] = srcImg_tensor[5].sub(0.406).div(0.225);
 
         auto unsqueezed_img = srcImg_tensor.unsqueeze(0);
+        unsqueezed_img = unsqueezed_img.to(at::kCUDA);
         std::vector<torch::jit::IValue> inputs;
         inputs.push_back(unsqueezed_img);
 
         // Execute the model and turn its output into a tensor.
-        auto output = model.forward(inputs).toTuple()->elements()[0].toTensor(); // Now works on CPU. Need to convert to GPU if required 
+        auto output = model.forward(inputs).toTuple()->elements()[0].toTensor();
         auto output_softmax = torch::softmax(output, 1);
         std::tuple<at::Tensor, at::Tensor> result = torch::max(output_softmax, 1);
         //torch::Tensor result = torch::max(output, 1)

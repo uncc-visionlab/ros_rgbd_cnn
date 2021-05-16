@@ -10,6 +10,7 @@
 #include <boost/make_shared.hpp>
 
 #include <torch/script.h>
+#include <torch/torch.h>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
