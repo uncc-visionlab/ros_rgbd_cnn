@@ -1,8 +1,8 @@
 #include <ros_rgbd_cnn/planenet.hpp>
 #include <fstream>
 
-#define image_w 160
-#define image_h 128
+#define image_w 640
+#define image_h 480
 
 PlaneNet::PlaneNet() : model_loaded(false) {
 }
@@ -32,10 +32,14 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
     cv::Mat plane3(abcd[0].rows, abcd[0].cols, CV_32FC3);
     cv::merge(bcd, plane3); // y, z, d channels of plane image
     cv::Mat resize_rgb, resize_plane, rgb_norm;
-    //cv::resize(rgb, resize_rgb, cv::Size(image_w, image_h), cv::INTER_LINEAR);
-    //cv::resize(plane3, resize_plane, cv::Size(image_w, image_h), cv::INTER_NEAREST);
-    resize_rgb = rgb;
-    resize_plane = plane3;
+    if (rgb.cols == image_h && rgb.rows == image_w) {
+        resize_rgb = rgb;
+        resize_plane = plane3;
+    }
+    else {
+        cv::resize(rgb, resize_rgb, cv::Size(image_w, image_h), cv::INTER_LINEAR);
+        cv::resize(plane3, resize_plane, cv::Size(image_w, image_h), cv::INTER_NEAREST);
+    }
     resize_rgb.convertTo(rgb_norm, CV_32F, 1.0 / 255, 0);
     cv::Mat label(resize_rgb.rows, resize_rgb.cols, CV_32FC2);
     
