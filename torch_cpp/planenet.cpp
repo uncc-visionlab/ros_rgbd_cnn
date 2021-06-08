@@ -25,7 +25,7 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
         std::cout << "Error Torch model is not loaded!" << std::endl;
     }
     model.to(at::kCUDA);
-    torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
+    //torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
     cv::Mat abcd[4];
     cv::split(plane, abcd);
     std::vector<cv::Mat> bcd = {abcd[1],abcd[2],abcd[3]}; 
@@ -62,7 +62,7 @@ cv::Mat PlaneNet::eval(const cv::Mat& rgb, const cv::Mat& plane) {
         auto unsqueezed_rgb = rgb_tensor.unsqueeze(0);
         auto unsqueezed_plane = plane_tensor.unsqueeze(0);
         unsqueezed_rgb = unsqueezed_rgb.to(at::kCUDA);
-        unsqueezed_rgb = unsqueezed_plane.to(at::kCUDA);
+        unsqueezed_plane = unsqueezed_plane.to(at::kCUDA);
 
         // Create a vector of inputs.
         std::vector<torch::jit::IValue> inputs;
